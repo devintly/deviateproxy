@@ -189,6 +189,24 @@
     .domains-modal { background: #2b2d31; border-radius: 14px; padding: 12px; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.45); overflow: hidden; }
     .domains-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .domains-header .label { margin: 0; }
+    .btn-import {
+      appearance: none;
+      border: 0;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #35373c;
+      color: #949ba4;
+      cursor: pointer;
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-import:hover { background: #404249; color: #f2f3f5; }
+    .btn-import svg { width: 13px; height: 13px; display: block; flex-shrink: 0; }
     :root {
       --editor-line-height: 22px;
     }
@@ -211,6 +229,10 @@
     }
     .list-domains-editor-container:focus-within {
       border-color: #3f4248;
+    }
+    .list-domains-editor-container.drag-over {
+      border-color: #017df1;
+      box-shadow: inset 0 0 0 1px #017df1;
     }
     .list-domains-editor-container.has-error {
       border-color: rgba(218, 55, 60, 0.6);
@@ -791,6 +813,11 @@
     <div class="domains-modal list-domains-modal" role="dialog" aria-modal="true" aria-labelledby="listDomainsModalTitle">
       <div class="domains-header">
         <div id="listDomainsModalTitle" class="label" data-i18n="modal_list_domains_title">Домены списка</div>
+        <button id="importListDomainsBtn" class="btn-import" type="button" data-i18n="btn_import_txt" title="Импорт из TXT">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="btn_import_txt">Импорт из TXT</span>
+        </button>
+        <input id="importListDomainsFile" type="file" accept=".txt,text/plain" style="display:none;">
       </div>
       <div class="list-domains-hint" data-i18n="lbl_manual_domains_hint">Каждый домен с новой строки</div>
       <div class="list-domains-editor-container" id="listDomainsContainer">

@@ -98,6 +98,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     listDomainsGutter: document.getElementById("listDomainsGutter"),
     listDomainsBackdrop: document.getElementById("listDomainsBackdrop"),
     listDomainsInput: document.getElementById("listDomainsInput"),
+    importListDomains: document.getElementById("importListDomainsBtn"),
+    importListDomainsFile: document.getElementById("importListDomainsFile"),
     applyListDomains: document.getElementById("applyListDomainsBtn"),
     cancelListDomains: document.getElementById("cancelListDomainsBtn"),
     lInterval: document.getElementById("listInterval"),
@@ -1232,6 +1234,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.proxyForm.style.display = "none";
     els.proxyMain.style.display = "flex";
     renderProxies();
+    saveFormDraft();
   }
 
   function resetProxyForm() {
@@ -1262,6 +1265,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       els.saveProxy.textContent = I18n.t("btn_save");
       els.deleteProxy.style.display = "none";
     }
+    saveFormDraft();
   }
 
   function collectProxyForm() {
@@ -1417,6 +1421,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (st && Array.isArray(st.proxyLists)) currentLists = st.proxyLists;
     } catch (_) {}
     renderLists();
+    saveFormDraft();
   }
 
   function updateManualDomainsUI() {
@@ -1444,6 +1449,58 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  let isRestoringDraft = false;
+
+  function getDraftState() {
+    const activeTabObj = Array.from(tabs).find(t => t.classList.contains("active"));
+    const activeTabId = activeTabObj ? activeTabObj.id : "tabRules";
+
+    const isListFormOpen = els.listsForm && els.listsForm.style.display === "flex";
+    const isProxyFormOpen = els.proxyForm && els.proxyForm.style.display === "flex";
+    const isDomainsModalOpen = els.listDomainsModal && els.listDomainsModal.classList.contains("open");
+
+    if (!isListFormOpen && !isProxyFormOpen && !isDomainsModalOpen) {
+      return null;
+    }
+
+    return {
+      activeTabId,
+      listForm: isListFormOpen ? {
+        editingListId,
+        name: els.lName ? els.lName.value : "",
+        url: els.lUrl ? els.lUrl.value : "",
+        interval: els.lInterval ? els.lInterval.value : "12",
+        viaProxy: !!(els.lViaProxy && els.lViaProxy.checked),
+        manualDomains: currentManualDomains.slice(),
+        domainsModalOpen: isDomainsModalOpen,
+        domainsModalInput: els.listDomainsInput ? els.listDomainsInput.value : ""
+      } : null,
+      proxyForm: isProxyFormOpen ? {
+        editingProxyId,
+        name: els.pName ? els.pName.value : "",
+        type: els.pType ? els.pType.value : "socks",
+        host: els.pHost ? els.pHost.value : "",
+        port: els.pPort ? els.pPort.value : "",
+        user: els.pUser ? els.pUser.value : "",
+        pass: els.pPass ? els.pPass.value : ""
+      } : null
+    };
+  }
+
+  function saveFormDraft() {
+    if (isRestoringDraft) return;
+    const draft = getDraftState();
+    if (draft) {
+      browser.storage.local.set({ popupUiDraft: draft }).catch(() => {});
+    } else {
+      browser.storage.local.remove("popupUiDraft").catch(() => {});
+    }
+  }
+
+  function clearFormDraft() {
+    browser.storage.local.remove("popupUiDraft").catch(() => {});
+  }
+
   function resetListForm() {
     els.lName.value = "";
     els.lUrl.value = "";
@@ -1451,6 +1508,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.lViaProxy.checked = false;
     currentManualDomains = [];
     updateManualDomainsUI();
+    saveFormDraft();
   }
 
   function openListForm(item) {
@@ -1477,6 +1535,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       els.saveList.textContent = I18n.t("btn_save");
       els.deleteList.style.display = "none";
     }
+    saveFormDraft();
   }
 
   function collectListForm() {
@@ -1520,7 +1579,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   async function loadState() {
-    const res = await browser.storage.local.get(["proxyConfig", "proxyServers", "proxyRules", "directRules", "proxyLists", "extensionEnabled", "proxyApplyError", "proxyApplyErrorCode"]);
+    const res = await browser.storage.local.get(["proxyConfig", "proxyServers", "proxyRules", "directRules", "proxyLists", "extensionEnabled", "proxyApplyError", "proxyApplyErrorCode", "popupUiDraft"]);
     currentRules = Array.isArray(res.proxyRules) ? res.proxyRules : [];
     currentDirect = Array.isArray(res.directRules) ? res.directRules : [];
     currentLists = Array.isArray(res.proxyLists) ? res.proxyLists : [];
@@ -1608,6 +1667,59 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (_) {}
     refreshScopeUI();
     refreshIcon();
+
+    // Restore draft form state if popup was closed while editing or adding
+    if (res.popupUiDraft) {
+      try {
+        isRestoringDraft = true;
+        const d = res.popupUiDraft;
+        if (d.activeTabId) {
+          const tabIndex = Array.from(tabs).findIndex(t => t.id === d.activeTabId);
+          if (tabIndex >= 0) activateTab(tabIndex, false);
+        }
+
+        if (d.listForm) {
+          const lf = d.listForm;
+          editingListId = lf.editingListId || null;
+          els.listsMain.style.display = "none";
+          els.listsForm.style.display = "flex";
+          if (els.lName) els.lName.value = lf.name || "";
+          if (els.lUrl) els.lUrl.value = lf.url || "";
+          if (els.lInterval) els.lInterval.value = lf.interval || "12";
+          if (els.lViaProxy) els.lViaProxy.checked = !!lf.viaProxy;
+          currentManualDomains = Array.isArray(lf.manualDomains) ? lf.manualDomains.slice() : [];
+          updateManualDomainsUI();
+          els.saveList.textContent = I18n.t("btn_save");
+          els.deleteList.style.display = editingListId ? "" : "none";
+
+          if (lf.domainsModalOpen && els.listDomainsModal) {
+            if (els.listDomainsInput) {
+              els.listDomainsInput.value = lf.domainsModalInput || currentManualDomains.join("\n");
+            }
+            listDomainsInvalidLines = new Set();
+            els.listDomainsModal.classList.add("open");
+            validateListDomainsLive();
+            syncListDomainsScroll();
+          }
+        } else if (d.proxyForm) {
+          const pf = d.proxyForm;
+          editingProxyId = pf.editingProxyId || null;
+          els.proxyMain.style.display = "none";
+          els.proxyForm.style.display = "flex";
+          if (els.pName) els.pName.value = pf.name || "";
+          if (els.pType) els.pType.value = pf.type || "socks";
+          if (els.pHost) els.pHost.value = pf.host || "";
+          if (els.pPort) els.pPort.value = pf.port || "";
+          if (els.pUser) els.pUser.value = pf.user || "";
+          if (els.pPass) els.pPass.value = pf.pass || "";
+          els.saveProxy.textContent = I18n.t("btn_save");
+          els.deleteProxy.style.display = editingProxyId ? "" : "none";
+        }
+      } catch (_) {} finally {
+        isRestoringDraft = false;
+      }
+    }
+
     await checkProxyConflict();
     if (res.proxyApplyError || res.proxyApplyErrorCode) flashError(res.proxyApplyError, res.proxyApplyErrorCode);
   }
@@ -1716,7 +1828,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   els.showAddProxy.addEventListener("click", () => openProxyForm(null));
-  els.cancelProxy.addEventListener("click", () => showProxyMain());
+  els.cancelProxy.addEventListener("click", () => {
+    clearFormDraft();
+    showProxyMain();
+  });
 
   els.saveProxy.addEventListener("click", async () => {
     const form = collectProxyForm();
@@ -1968,11 +2083,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           setTimeout(() => els.listDomainsInput.focus(), 50);
         }
       }
+      saveFormDraft();
     });
   }
 
   function closeListDomainsModal() {
     if (els.listDomainsModal) els.listDomainsModal.classList.remove("open");
+    saveFormDraft();
   }
 
   if (els.cancelListDomains) {
@@ -1982,6 +2099,70 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (els.listDomainsModal) {
     els.listDomainsModal.addEventListener("click", (e) => {
       if (e.target === els.listDomainsModal) closeListDomainsModal();
+    });
+  }
+
+  function appendListDomainsText(text) {
+    if (!els.listDomainsInput) return;
+    const currentVal = els.listDomainsInput.value.trim();
+    const incomingVal = String(text || "").trim();
+    if (!incomingVal) return;
+
+    els.listDomainsInput.value = currentVal ? `${currentVal}\n${incomingVal}` : incomingVal;
+    validateListDomainsLive();
+    els.listDomainsInput.focus();
+    syncListDomainsScroll();
+    saveFormDraft();
+  }
+
+  if (els.importListDomains) {
+    els.importListDomains.addEventListener("click", () => {
+      saveFormDraft();
+      const importUrl = browser.runtime.getURL("import.html");
+      browser.tabs.create({ url: importUrl });
+    });
+  }
+
+  if (els.importListDomainsFile) {
+    els.importListDomainsFile.addEventListener("change", () => {
+      const file = els.importListDomainsFile.files && els.importListDomainsFile.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        appendListDomainsText(e.target && e.target.result);
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  if (els.listDomainsContainer) {
+    ["dragenter", "dragover"].forEach(evt => {
+      els.listDomainsContainer.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        els.listDomainsContainer.classList.add("drag-over");
+      });
+    });
+
+    ["dragleave", "drop"].forEach(evt => {
+      els.listDomainsContainer.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        els.listDomainsContainer.classList.remove("drag-over");
+      });
+    });
+
+    els.listDomainsContainer.addEventListener("drop", (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        const file = dt.files[0];
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          appendListDomainsText(ev.target && ev.target.result);
+        };
+        reader.readAsText(file);
+      }
     });
   }
 
@@ -1999,11 +2180,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       updateManualDomainsUI();
       closeListDomainsModal();
+      saveFormDraft();
     });
   }
 
   els.showAddList.addEventListener("click", () => openListForm(null));
-  els.cancelList.addEventListener("click", () => showListsMain());
+  els.cancelList.addEventListener("click", () => {
+    clearFormDraft();
+    showListsMain();
+  });
 
   els.saveList.addEventListener("click", async () => {
     const isManual = currentManualDomains.length > 0;
@@ -2218,6 +2403,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       extensionEnabled = !!c.extensionEnabled.newValue && hasConfiguredProxy() && !isConflictBlocked;
       refreshPowerBtn();
     }
+  });
+
+  [
+    els.lName, els.lUrl, els.lInterval, els.lViaProxy,
+    els.pName, els.pType, els.pHost, els.pPort, els.pUser, els.pPass,
+    els.listDomainsInput
+  ].forEach(el => {
+    if (!el) return;
+    el.addEventListener("input", saveFormDraft);
+    el.addEventListener("change", saveFormDraft);
   });
 
   await loadState();

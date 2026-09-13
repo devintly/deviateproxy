@@ -220,6 +220,77 @@ document.addEventListener("DOMContentLoaded", async () => {
   directEditor.textarea.value = initialDirect.join("\n");
   validateAll();
 
+  function appendEditorText(editor, text) {
+    const currentVal = editor.textarea.value.trim();
+    const incomingVal = String(text || "").trim();
+    if (!incomingVal) return;
+
+    editor.textarea.value = currentVal ? `${currentVal}\n${incomingVal}` : incomingVal;
+    validateAll();
+    editor.textarea.focus();
+    editor.syncScroll();
+  }
+
+  function setupImportFile(btnId, fileInputId, editor) {
+    const btn = document.getElementById(btnId);
+    const fileInput = document.getElementById(fileInputId);
+    if (!btn || !fileInput) return;
+
+    btn.addEventListener("click", () => {
+      fileInput.value = "";
+      fileInput.click();
+    });
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        appendEditorText(editor, e.target && e.target.result);
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  function setupDropZone(containerId, editor) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    ["dragenter", "dragover"].forEach(evt => {
+      container.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.add("drag-over");
+      });
+    });
+
+    ["dragleave", "drop"].forEach(evt => {
+      container.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        container.classList.remove("drag-over");
+      });
+    });
+
+    container.addEventListener("drop", (e) => {
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length) {
+        const file = dt.files[0];
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          appendEditorText(editor, ev.target && ev.target.result);
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
+
+  setupImportFile("importProxyBtn", "importProxyFile", proxyEditor);
+  setupImportFile("importDirectBtn", "importDirectFile", directEditor);
+  setupDropZone("proxyContainer", proxyEditor);
+  setupDropZone("directContainer", directEditor);
+
   window.addEventListener("resize", () => {
     proxyEditor.syncScroll();
     directEditor.syncScroll();

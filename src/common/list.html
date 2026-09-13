@@ -19,6 +19,26 @@
     .status:empty { display: none; }
     button { border: 0; border-radius: 10px; padding: 10px 14px; background: #017df1; color: #fff; font-weight: 700; cursor: pointer; min-height: 40px; transition: background 0.15s; }
     button:hover { background: #016bcf; }
+    .pane-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .pane-header .label { margin: 0; }
+    .btn-import {
+      appearance: none;
+      border: 0;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #35373c;
+      color: #949ba4;
+      cursor: pointer;
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-import:hover { background: #404249; color: #f2f3f5; }
+    .btn-import svg { width: 13px; height: 13px; display: block; flex-shrink: 0; }
     .panes { flex: 1; display: flex; gap: 16px; min-height: 0; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
     .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     .pane .label { font-size: 11px; text-transform: uppercase; color: #b5bac1; font-weight: 700; margin: 0 0 8px; }
@@ -35,6 +55,10 @@
     }
     .editor-container:focus-within {
       border-color: #3f4248;
+    }
+    .editor-container.drag-over {
+      border-color: #017df1;
+      box-shadow: inset 0 0 0 1px #017df1;
     }
     .editor-container.has-error {
       border-color: rgba(218, 55, 60, 0.6);
@@ -148,7 +172,14 @@
   </div>
   <div class="panes">
     <div class="pane">
-      <div class="label" data-i18n="list_editor_proxy">Проксировать</div>
+      <div class="pane-header">
+        <div class="label" data-i18n="list_editor_proxy">Проксировать</div>
+        <button id="importProxyBtn" class="btn-import" type="button" data-i18n="btn_import_txt" title="Импорт из TXT">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="btn_import_txt">Импорт из TXT</span>
+        </button>
+        <input id="importProxyFile" type="file" accept=".txt,text/plain" style="display:none;">
+      </div>
       <div class="editor-container" id="proxyContainer">
         <div class="gutter" id="proxyGutter" aria-hidden="true"></div>
         <div class="editor-area">
@@ -158,7 +189,14 @@
       </div>
     </div>
     <div class="pane">
-      <div class="label" data-i18n="list_editor_direct">Напрямую</div>
+      <div class="pane-header">
+        <div class="label" data-i18n="list_editor_direct">Напрямую</div>
+        <button id="importDirectBtn" class="btn-import" type="button" data-i18n="btn_import_txt" title="Импорт из TXT">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="btn_import_txt">Импорт из TXT</span>
+        </button>
+        <input id="importDirectFile" type="file" accept=".txt,text/plain" style="display:none;">
+      </div>
       <div class="editor-container" id="directContainer">
         <div class="gutter" id="directGutter" aria-hidden="true"></div>
         <div class="editor-area">
