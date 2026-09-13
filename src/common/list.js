@@ -41,17 +41,58 @@ document.addEventListener("DOMContentLoaded", async () => {
     return { lines: parsedLines, rules: uniqueRules, invalid };
   }
 
+  function compareRules(a, b) {
+    const hostA = ruleHost(a);
+    const hostB = ruleHost(b);
+    const isIpA = HostRules.isIpHost ? HostRules.isIpHost(hostA) : /^\d+\.\d+\.\d+\.\d+$/.test(hostA);
+    const isIpB = HostRules.isIpHost ? HostRules.isIpHost(hostB) : /^\d+\.\d+\.\d+\.\d+$/.test(hostB);
+
+    // Group IPs or put domains first
+    if (isIpA !== isIpB) return isIpA ? 1 : -1;
+    if (isIpA && isIpB) {
+      return hostA.localeCompare(hostB, undefined, { numeric: true });
+    }
+
+    const apexA = (HostRules.apexDomain && HostRules.apexDomain(hostA)) || hostA;
+    const apexB = (HostRules.apexDomain && HostRules.apexDomain(hostB)) || hostB;
+
+    if (apexA !== apexB) {
+      return apexA.localeCompare(apexB);
+    }
+
+    // Same apex domain: apex rule comes first
+    const isApexA = hostA === apexA;
+    const isApexB = hostB === apexB;
+    if (isApexA !== isApexB) return isApexA ? -1 : 1;
+
+    // Subdomains left-to-right
+    const cmp = hostA.localeCompare(hostB);
+    if (cmp !== 0) return cmp;
+
+    // If same host, wildcard comes first (*.example.com before example.com)
+    const wildA = a.startsWith("*.");
+    const wildB = b.startsWith("*.");
+    if (wildA !== wildB) return wildA ? -1 : 1;
+
+    return a.localeCompare(b);
+  }
+
+  function sortRules(rules) {
+    return rules.slice().sort(compareRules);
+  }
+
   function pruneRedundantWithinList(rules) {
     const wildHosts = new Set();
     rules.forEach(r => {
       if (r.startsWith("*.")) wildHosts.add(ruleHost(r));
     });
-    return rules.filter(r => {
+    const filtered = rules.filter(r => {
       if (!r.startsWith("*.") && wildHosts.has(ruleHost(r))) {
         return false;
       }
       return true;
     });
+    return sortRules(filtered);
   }
 
   function findCrossConflicts(directParsed, proxyParsed) {
