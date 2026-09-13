@@ -318,37 +318,33 @@
     .scope-btn:hover { background: #35373c; }
     .scope-btn.active { background: #4e5058; color: #f2f3f5; }
     #panelRules .card #openListBtn { margin-top: auto; }
-    #domainActionRow { display: flex; gap: 0; align-items: stretch; }
+    #domainActionRow { display: flex; gap: 0; align-items: stretch; width: 100%; }
     #domainActionRow #toggleRuleBtn {
-      flex: 1 1 auto;
+      flex: 0 0 auto;
+      width: calc(100% - 40px);
       min-width: 0;
-      max-width: 100%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: clip;
-      transition: max-width 0.28s cubic-bezier(0.25, 1, 0.5, 1),
-                  flex-basis 0.28s cubic-bezier(0.25, 1, 0.5, 1),
+      transition: width 0.26s cubic-bezier(0.25, 1, 0.5, 1),
                   background-color 0.2s ease,
                   color 0.2s ease,
-                  padding 0.28s ease;
+                  padding 0.26s ease;
     }
     #domainActionRow #viewDomainsBtn {
+      flex: 0 0 32px;
       margin-left: 8px;
-      flex-shrink: 0;
     }
     .domain-mode {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
-      flex: 0 0 0px;
-      max-width: 0px;
-      opacity: 0;
-      overflow: hidden;
+      flex: 1 1 0px;
       min-width: 0;
       min-height: 32px;
       margin: 0;
-      margin-left: 0px;
+      margin-left: 0;
       padding: 0;
       background: #1e1f22;
       border-radius: 8px;
@@ -359,11 +355,11 @@
       pointer-events: none;
       box-sizing: border-box;
       white-space: nowrap;
-      transition: max-width 0.28s cubic-bezier(0.25, 1, 0.5, 1),
-                  flex-basis 0.28s cubic-bezier(0.25, 1, 0.5, 1),
-                  margin-left 0.28s cubic-bezier(0.25, 1, 0.5, 1),
-                  padding 0.28s cubic-bezier(0.25, 1, 0.5, 1),
-                  opacity 0.22s ease-out;
+      overflow: hidden;
+      opacity: 0;
+      transition: margin-left 0.26s cubic-bezier(0.25, 1, 0.5, 1),
+                  opacity 0.22s cubic-bezier(0.25, 1, 0.5, 1),
+                  padding 0.26s cubic-bezier(0.25, 1, 0.5, 1);
     }
     .domain-mode .domain-mode-off,
     .domain-mode .domain-mode-on {
@@ -384,14 +380,11 @@
     .domain-mode .switch input:checked + .switch-ui::after { left: 19px; }
 
     #domainActionRow.has-rule #toggleRuleBtn {
-      flex: 0 0 76px;
-      max-width: 76px;
+      width: 76px;
       padding-left: 6px;
       padding-right: 6px;
     }
     #domainActionRow.has-rule #domainModeSwitch {
-      flex: 1 1 0px;
-      max-width: 320px;
       opacity: 1;
       margin-left: 8px;
       padding: 0 6px;
