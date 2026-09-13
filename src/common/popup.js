@@ -94,6 +94,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     openListDomains: document.getElementById("openListDomainsBtn"),
     listUpdateSettings: document.getElementById("listUpdateSettings"),
     listDomainsModal: document.getElementById("listDomainsModal"),
+    listDomainsContainer: document.getElementById("listDomainsContainer"),
+    listDomainsGutter: document.getElementById("listDomainsGutter"),
+    listDomainsBackdrop: document.getElementById("listDomainsBackdrop"),
     listDomainsInput: document.getElementById("listDomainsInput"),
     applyListDomains: document.getElementById("applyListDomainsBtn"),
     cancelListDomains: document.getElementById("cancelListDomainsBtn"),
@@ -1835,14 +1838,135 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (els.proxySearch) els.proxySearch.addEventListener("input", filterProxies);
   if (els.listsSearch) els.listsSearch.addEventListener("input", filterLists);
 
+  function ruleHost(rule) {
+    return String(rule || "").trim().toLowerCase().replace(/^\*\./, "");
+  }
+
+  function compareRules(a, b) {
+    const hostA = ruleHost(a);
+    const hostB = ruleHost(b);
+    const isIpA = HostRules.isIpHost ? HostRules.isIpHost(hostA) : /^\d+\.\d+\.\d+\.\d+$/.test(hostA);
+    const isIpB = HostRules.isIpHost ? HostRules.isIpHost(hostB) : /^\d+\.\d+\.\d+\.\d+$/.test(hostB);
+
+    if (isIpA !== isIpB) return isIpA ? 1 : -1;
+    if (isIpA && isIpB) {
+      return hostA.localeCompare(hostB, undefined, { numeric: true });
+    }
+
+    const cmp = hostA.localeCompare(hostB);
+    if (cmp !== 0) return cmp;
+
+    const wildA = a.startsWith("*.");
+    const wildB = b.startsWith("*.");
+    if (wildA !== wildB) return wildA ? -1 : 1;
+
+    return a.localeCompare(b);
+  }
+
+  function sortRules(rules) {
+    return rules.slice().sort(compareRules);
+  }
+
+  function pruneRedundantWithinList(rules) {
+    const wildHosts = new Set();
+    rules.forEach(r => {
+      if (r.startsWith("*.")) wildHosts.add(ruleHost(r));
+    });
+    const filtered = rules.filter(r => {
+      if (!r.startsWith("*.") && wildHosts.has(ruleHost(r))) {
+        return false;
+      }
+      return true;
+    });
+    return sortRules(filtered);
+  }
+
+  let listDomainsInvalidLines = new Set();
+  let listDomainsRafId = null;
+
+  function renderListDomainsEditor() {
+    if (!els.listDomainsInput || !els.listDomainsGutter || !els.listDomainsBackdrop) return;
+    const lines = String(els.listDomainsInput.value || "").replace(/\r\n/g, "\n").split("\n");
+    const count = Math.max(lines.length, 1);
+    const gutterFrag = document.createDocumentFragment();
+    const backdropFrag = document.createDocumentFragment();
+
+    for (let i = 0; i < count; i++) {
+      const lineNum = i + 1;
+      const isInvalid = listDomainsInvalidLines.has(lineNum);
+
+      const gDiv = document.createElement("div");
+      gDiv.className = `gutter-line${isInvalid ? " invalid" : ""}`;
+      gDiv.textContent = String(lineNum);
+      gutterFrag.appendChild(gDiv);
+
+      const bDiv = document.createElement("div");
+      bDiv.className = `hl-line${isInvalid ? " invalid" : ""}`;
+      backdropFrag.appendChild(bDiv);
+    }
+
+    els.listDomainsGutter.textContent = "";
+    els.listDomainsGutter.appendChild(gutterFrag);
+    els.listDomainsBackdrop.textContent = "";
+    els.listDomainsBackdrop.appendChild(backdropFrag);
+    if (els.listDomainsContainer) {
+      els.listDomainsContainer.classList.toggle("has-error", listDomainsInvalidLines.size > 0);
+    }
+    syncListDomainsScroll();
+  }
+
+  function syncListDomainsScroll() {
+    if (!els.listDomainsInput || !els.listDomainsBackdrop || !els.listDomainsGutter) return;
+    els.listDomainsBackdrop.scrollTop = els.listDomainsInput.scrollTop;
+    els.listDomainsBackdrop.scrollLeft = els.listDomainsInput.scrollLeft;
+    els.listDomainsGutter.scrollTop = els.listDomainsInput.scrollTop;
+  }
+
+  function validateListDomainsLive() {
+    if (!els.listDomainsInput) return { validRules: [], invalid: [] };
+    const lines = String(els.listDomainsInput.value || "").replace(/\r\n/g, "\n").split("\n");
+    const invalid = [];
+    const validRules = [];
+
+    lines.forEach((line, index) => {
+      const lineNum = index + 1;
+      const raw = line.trim();
+      if (!raw) return;
+      const normalized = HostRules.normalizeRule(raw);
+      if (!normalized) {
+        invalid.push(lineNum);
+      } else if (!validRules.includes(normalized)) {
+        validRules.push(normalized);
+      }
+    });
+
+    listDomainsInvalidLines = new Set(invalid);
+    renderListDomainsEditor();
+    return { validRules, invalid };
+  }
+
+  function scheduleListDomainsRender() {
+    if (listDomainsRafId) cancelAnimationFrame(listDomainsRafId);
+    listDomainsRafId = requestAnimationFrame(validateListDomainsLive);
+  }
+
+  if (els.listDomainsInput) {
+    els.listDomainsInput.addEventListener("input", scheduleListDomainsRender);
+    els.listDomainsInput.addEventListener("scroll", syncListDomainsScroll, { passive: true });
+  }
+
   if (els.openListDomains) {
     els.openListDomains.addEventListener("click", () => {
       if (els.listDomainsInput) {
         els.listDomainsInput.value = currentManualDomains.join("\n");
       }
+      listDomainsInvalidLines = new Set();
       if (els.listDomainsModal) {
         els.listDomainsModal.classList.add("open");
-        if (els.listDomainsInput) els.listDomainsInput.focus();
+        renderListDomainsEditor();
+        if (els.listDomainsInput) {
+          setTimeout(() => els.listDomainsInput.focus(), 50);
+        }
       }
     });
   }
@@ -1863,8 +1987,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (els.applyListDomains) {
     els.applyListDomains.addEventListener("click", () => {
-      const raw = els.listDomainsInput ? els.listDomainsInput.value : "";
-      currentManualDomains = ListIngest.parseList(raw);
+      const { validRules, invalid } = validateListDomainsLive();
+      if (invalid.length > 0) {
+        flash(I18n.t("msg_invalid_rules", { lines: invalid.slice(0, 10).join(", ") }), "#ff6b6b");
+        return;
+      }
+      const sorted = pruneRedundantWithinList(validRules);
+      currentManualDomains = sorted;
+      if (els.listDomainsInput) {
+        els.listDomainsInput.value = sorted.join("\n");
+      }
       updateManualDomainsUI();
       closeListDomainsModal();
     });

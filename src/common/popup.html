@@ -189,27 +189,123 @@
     .domains-modal { background: #2b2d31; border-radius: 14px; padding: 12px; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.45); overflow: hidden; }
     .domains-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .domains-header .label { margin: 0; }
-    .list-domains-textarea {
-      flex: 1;
-      min-height: 0;
+    :root {
+      --editor-line-height: 22px;
+    }
+    .list-domains-modal {
       width: 100%;
-      background: #111214;
-      color: #f2f3f5;
-      font-family: Consolas, "Courier New", monospace;
-      font-size: 12px;
-      line-height: 1.5;
-      padding: 10px;
-      border: 1px solid #232428;
-      border-radius: 10px;
-      outline: none;
-      resize: none;
+      height: 100%;
       box-sizing: border-box;
-      white-space: pre;
-      overflow-wrap: normal;
-      overflow-x: auto;
+    }
+    .list-domains-editor-container {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      background: #111214;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #232428;
+      position: relative;
+      transition: border-color 0.15s ease;
       margin-bottom: 8px;
     }
-    .list-domains-textarea:focus { border-color: #017df1; }
+    .list-domains-editor-container:focus-within {
+      border-color: #3f4248;
+    }
+    .list-domains-editor-container.has-error {
+      border-color: rgba(218, 55, 60, 0.6);
+    }
+    .list-domains-gutter {
+      width: 40px;
+      min-width: 40px;
+      background: #16171a;
+      border-right: 1px solid #232428;
+      overflow: hidden;
+      padding: 10px 4px;
+      user-select: none;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 11px;
+      line-height: var(--editor-line-height);
+      color: #5c6068;
+      text-align: right;
+      box-sizing: border-box;
+    }
+    .list-domains-gutter .gutter-line {
+      height: var(--editor-line-height);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+    }
+    .list-domains-gutter .gutter-line.invalid {
+      color: #ff6b6b;
+      font-weight: 700;
+    }
+    .list-domains-gutter .gutter-line.invalid::before {
+      content: "!";
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      line-height: 11px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: 900;
+      color: #fff;
+      background: #da373c;
+      border-radius: 50%;
+    }
+    .list-domains-editor-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+      min-height: 0;
+    }
+    .list-domains-backdrop {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      padding: 10px 12px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      line-height: var(--editor-line-height);
+      white-space: pre;
+      z-index: 1;
+      box-sizing: border-box;
+    }
+    .list-domains-backdrop .hl-line {
+      height: var(--editor-line-height);
+      border-radius: 3px;
+      margin: 0 -6px;
+      padding: 0 6px;
+    }
+    .list-domains-backdrop .hl-line.invalid {
+      background: rgba(218, 55, 60, 0.32);
+      border-left: 3px solid #ff6b6b;
+      box-shadow: 0 0 8px rgba(218, 55, 60, 0.2) inset;
+    }
+    textarea.list-domains-code-editor {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #f2f3f5;
+      caret-color: #57f287;
+      padding: 10px 12px;
+      resize: none;
+      font-size: 13px;
+      line-height: var(--editor-line-height);
+      font-family: Consolas, "Courier New", monospace;
+      white-space: pre;
+      overflow: auto;
+      z-index: 2;
+      box-sizing: border-box;
+    }
     .list-domains-hint { font-size: 11px; color: #949ba4; margin-bottom: 8px; }
     .domain-tree-btn {
       width: 28px;
@@ -692,12 +788,18 @@
     </div>
   </div>
   <div id="listDomainsModal" class="domains-overlay">
-    <div class="domains-modal" role="dialog" aria-modal="true" aria-labelledby="listDomainsModalTitle">
+    <div class="domains-modal list-domains-modal" role="dialog" aria-modal="true" aria-labelledby="listDomainsModalTitle">
       <div class="domains-header">
         <div id="listDomainsModalTitle" class="label" data-i18n="modal_list_domains_title">Домены списка</div>
       </div>
       <div class="list-domains-hint" data-i18n="lbl_manual_domains_hint">Каждый домен с новой строки</div>
-      <textarea id="listDomainsInput" class="list-domains-textarea" data-i18n-placeholder="placeholder_manual_domains" placeholder="example.com&#10;*.example.com" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+      <div class="list-domains-editor-container" id="listDomainsContainer">
+        <div class="list-domains-gutter" id="listDomainsGutter" aria-hidden="true"></div>
+        <div class="list-domains-editor-area">
+          <div class="list-domains-backdrop" id="listDomainsBackdrop" aria-hidden="true"></div>
+          <textarea id="listDomainsInput" class="list-domains-code-editor" data-i18n-placeholder="placeholder_manual_domains" placeholder="example.com&#10;*.example.com" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" wrap="off"></textarea>
+        </div>
+      </div>
       <div class="form-actions">
         <button id="applyListDomainsBtn" class="primary" type="button" data-i18n="btn_apply">Применить</button>
         <button id="cancelListDomainsBtn" class="secondary" type="button" data-i18n="btn_cancel">Отмена</button>
