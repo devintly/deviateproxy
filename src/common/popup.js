@@ -1901,9 +1901,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   if (els.mainWildcard) {
-    els.mainWildcard.addEventListener("click", () => {
+    els.mainWildcard.addEventListener("click", async () => {
+      const raw = els.domainInput ? els.domainInput.value.trim() : "";
+      const h = hostOfRule(raw) || normalize(raw);
+      const existing = existingUserRule(h);
       els.mainWildcard.classList.toggle("active");
       refreshIcon();
+      if (existing) {
+        const newRule = effectiveInputRule();
+        if (newRule && normalize(existing) !== normalize(newRule)) {
+          const action = isDirectRule(existing) ? "direct" : "proxy";
+          setUserRule(newRule, action);
+          refreshIcon();
+          flash(I18n.t("msg_saved"));
+          await saveRules();
+          syncOpenDomainLine(existing);
+          syncOpenDomainLine(newRule);
+          checkAutoReload(newRule);
+        }
+      }
     });
   }
 
