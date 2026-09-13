@@ -17,6 +17,7 @@ new vm.Script(firefox, { filename: "firefox/background.js" });
 assert(/runtime\.lastError/.test(chrome), "Chrome proxy callbacks must inspect runtime.lastError");
 assert(/offscreen\.createDocument/.test(chrome) && /target:\s*"offscreen"/.test(chrome), "Chrome must parse lists offscreen");
 assert(/listUpdateQueue\.then/.test(chrome) && /listUpdateQueue\.then/.test(firefox), "list updates must be serialized");
+assert(/saveLocalList/.test(chrome) && /saveLocalList/.test(firefox), "Both Chrome and Firefox must support saveLocalList");
 assert(/initPromise\.then\(updateDueLists\)/.test(firefox), "Firefox alarms must await initialization");
 
 assert(/function seedTabUrl\(/.test(chrome) && /function seedTabUrl\(/.test(firefox), "Both Chrome and Firefox must implement seedTabUrl");

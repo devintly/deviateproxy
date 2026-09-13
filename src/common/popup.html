@@ -173,11 +173,44 @@
     .switch.mode-switch .switch-ui::after,
     .switch.mode-switch input:checked + .switch-ui::after { background: #fff; }
 
+    .field-disabled {
+      opacity: 0.35;
+      pointer-events: none;
+      filter: grayscale(1);
+    }
+    .field-disabled input {
+      color: #636b75 !important;
+      background: #141517 !important;
+      cursor: not-allowed;
+    }
+
     .domains-overlay { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.55); padding: 16px; overflow: hidden; }
     .domains-overlay.open { display: flex; flex-direction: column; }
     .domains-modal { background: #2b2d31; border-radius: 14px; padding: 12px; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; box-shadow: 0 8px 32px rgba(0,0,0,0.45); overflow: hidden; }
     .domains-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
     .domains-header .label { margin: 0; }
+    .list-domains-textarea {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      background: #111214;
+      color: #f2f3f5;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 10px;
+      border: 1px solid #232428;
+      border-radius: 10px;
+      outline: none;
+      resize: none;
+      box-sizing: border-box;
+      white-space: pre;
+      overflow-wrap: normal;
+      overflow-x: auto;
+      margin-bottom: 8px;
+    }
+    .list-domains-textarea:focus { border-color: #017df1; }
+    .list-domains-hint { font-size: 11px; color: #949ba4; margin-bottom: 8px; }
     .domain-tree-btn {
       width: 28px;
       height: 28px;
@@ -592,9 +625,14 @@
         <div id="listsForm" style="display:none;">
           <div class="label" data-i18n="lbl_name">Название</div>
           <input id="listName" type="text" data-i18n-placeholder="placeholder_list_name" placeholder="Если пусто — будет ссылка">
-          <div class="label"><span data-i18n="lbl_url">URL списка (TXT / PAC)</span><span class="req" aria-hidden="true">*</span></div>
-          <input id="listUrl" type="text" data-i18n-placeholder="placeholder_list_url" placeholder="https://.../filter.txt или https://.../proxy.pac">
-          <div class="row form-pair">
+          <div class="label" id="listUrlLabel"><span data-i18n="lbl_url">URL списка (TXT / PAC)</span><span class="req" aria-hidden="true">*</span></div>
+          <div class="row" style="align-items: center; gap: 8px; margin-bottom: 12px;">
+            <input id="listUrl" type="text" style="margin-bottom: 0;" data-i18n-placeholder="placeholder_list_url" placeholder="https://.../filter.txt или https://.../proxy.pac">
+            <button id="openListDomainsBtn" class="icon-btn" type="button" data-i18n-title="btn_manual_domains" title="Ввести домены вручную" aria-label="Ввести домены вручную">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
+          <div id="listUpdateSettings" class="row form-pair">
             <div class="form-col-interval">
               <div class="label" data-i18n="lbl_interval">Обновление (часы)</div>
               <input id="listInterval" type="number" min="1" max="168" value="12" placeholder="12">
@@ -650,6 +688,19 @@
       <div class="form-actions domains-actions">
         <button id="saveDomainsBtn" class="primary" type="button" data-i18n="btn_save">Сохранить</button>
         <button id="cancelDomainsBtn" class="secondary" type="button" data-i18n="btn_cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+  <div id="listDomainsModal" class="domains-overlay">
+    <div class="domains-modal" role="dialog" aria-modal="true" aria-labelledby="listDomainsModalTitle">
+      <div class="domains-header">
+        <div id="listDomainsModalTitle" class="label" data-i18n="modal_list_domains_title">Домены списка</div>
+      </div>
+      <div class="list-domains-hint" data-i18n="lbl_manual_domains_hint">Каждый домен с новой строки</div>
+      <textarea id="listDomainsInput" class="list-domains-textarea" data-i18n-placeholder="placeholder_manual_domains" placeholder="example.com&#10;*.example.com" spellcheck="false" autocomplete="off" wrap="off"></textarea>
+      <div class="form-actions">
+        <button id="applyListDomainsBtn" class="primary" type="button" data-i18n="btn_apply">Применить</button>
+        <button id="cancelListDomainsBtn" class="secondary" type="button" data-i18n="btn_cancel">Отмена</button>
       </div>
     </div>
   </div>

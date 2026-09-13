@@ -90,6 +90,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     listsMain: document.getElementById("listsMain"), listsForm: document.getElementById("listsForm"),
     listsEmpty: document.getElementById("listsEmpty"), listsSearch: document.getElementById("listsSearch"),
     lName: document.getElementById("listName"), lUrl: document.getElementById("listUrl"),
+    lUrlLabel: document.getElementById("listUrlLabel"),
+    openListDomains: document.getElementById("openListDomainsBtn"),
+    listUpdateSettings: document.getElementById("listUpdateSettings"),
+    listDomainsModal: document.getElementById("listDomainsModal"),
+    listDomainsInput: document.getElementById("listDomainsInput"),
+    applyListDomains: document.getElementById("applyListDomainsBtn"),
+    cancelListDomains: document.getElementById("cancelListDomainsBtn"),
     lInterval: document.getElementById("listInterval"),
     lViaProxy: document.getElementById("listViaProxy"),
     showAddList: document.getElementById("showAddListBtn"), saveList: document.getElementById("saveListBtn"),
@@ -119,6 +126,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let scopeMode = "host";
   let editingListId = null;
   let editingProxyId = null;
+  let currentManualDomains = [];
   let extensionEnabled = false;
   let isConflictBlocked = false;
 
@@ -1271,15 +1279,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       const card = document.createElement("div");
       card.className = `list-card${isEnabled ? "" : " list-disabled"}`;
       const name = String(l.name || "").trim();
-      const url = String(l.url || "");
+      const isLocal = !!(l.isLocal || (!l.url && (l.domains || []).length > 0));
+      const url = isLocal ? I18n.t("lbl_local_list") : String(l.url || "");
       card.dataset.search = [name, url].filter(Boolean).join(" ");
-      const fmt = l.format === "pac" ? "PAC" : "txt";
+      const fmt = isLocal ? I18n.t("lbl_local_list") : (l.format === "pac" ? "PAC" : "txt");
       const domains = l.domainCount || (l.domains || []).length || 0;
       const ips = l.ipCount || (l.ips || []).length || 0;
       const domLabel = I18n.getLang() === "ru"
         ? pluralRu(domains, "домен", "домена", "доменов")
         : (domains === 1 ? "domain" : "domains");
-      const metaText = `${fmt} · ${domains} ${domLabel} / ${ips} IP`;
+      const metaText = isLocal ? `${domains} ${domLabel}` : `${fmt} · ${domains} ${domLabel} / ${ips} IP`;
       const updatedText = `${I18n.t("lbl_updated")}: ${formatListUpdated(l.updatedAt)}`;
       const updateError = ListUpdate.hasUpdateError(l) ? I18n.error(l.updateError, l.updateErrorCode) : "";
 
@@ -1350,6 +1359,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       refreshBtn.setAttribute("aria-label", refreshTitle);
       const refreshSvg = createSvg(SVGS.refresh);
       if (refreshSvg) refreshBtn.appendChild(refreshSvg);
+      if (isLocal) refreshBtn.style.display = "none";
       actions.appendChild(refreshBtn);
 
       const editBtn = document.createElement("button");
@@ -1406,11 +1416,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderLists();
   }
 
+  function updateManualDomainsUI() {
+    const hasManual = currentManualDomains.length > 0;
+    if (hasManual) {
+      els.lUrl.disabled = true;
+      els.lUrl.classList.add("field-disabled");
+      const countText = I18n.getLang() === "ru"
+        ? pluralRu(currentManualDomains.length, "домен", "домена", "доменов")
+        : (currentManualDomains.length === 1 ? "domain" : "domains");
+      els.lUrl.placeholder = `${I18n.t("lbl_local_list")} (${currentManualDomains.length} ${countText})`;
+      els.lUrl.value = "";
+      if (els.listUpdateSettings) els.listUpdateSettings.classList.add("field-disabled");
+      if (els.lInterval) els.lInterval.disabled = true;
+      if (els.lViaProxy) els.lViaProxy.disabled = true;
+      if (els.openListDomains) els.openListDomains.classList.add("open");
+    } else {
+      els.lUrl.disabled = false;
+      els.lUrl.classList.remove("field-disabled");
+      els.lUrl.placeholder = I18n.t("placeholder_list_url");
+      if (els.listUpdateSettings) els.listUpdateSettings.classList.remove("field-disabled");
+      if (els.lInterval) els.lInterval.disabled = false;
+      if (els.lViaProxy) els.lViaProxy.disabled = false;
+      if (els.openListDomains) els.openListDomains.classList.remove("open");
+    }
+  }
+
   function resetListForm() {
     els.lName.value = "";
     els.lUrl.value = "";
     els.lInterval.value = "12";
     els.lViaProxy.checked = false;
+    currentManualDomains = [];
+    updateManualDomainsUI();
   }
 
   function openListForm(item) {
@@ -1419,9 +1456,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (item) {
       editingListId = item.id;
       els.lName.value = item.name || "";
-      els.lUrl.value = item.url || "";
       els.lInterval.value = String(Number(item.intervalHours) > 0 ? Number(item.intervalHours) : 12);
       els.lViaProxy.checked = !!item.viaProxy;
+      if (item.isLocal || (!item.url && (item.domains || []).length > 0)) {
+        currentManualDomains = (item.domains || []).slice();
+        els.lUrl.value = "";
+      } else {
+        currentManualDomains = [];
+        els.lUrl.value = item.url || "";
+      }
+      updateManualDomainsUI();
       els.saveList.textContent = I18n.t("btn_save");
       els.deleteList.style.display = "";
     } else {
@@ -1791,26 +1835,75 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (els.proxySearch) els.proxySearch.addEventListener("input", filterProxies);
   if (els.listsSearch) els.listsSearch.addEventListener("input", filterLists);
 
+  if (els.openListDomains) {
+    els.openListDomains.addEventListener("click", () => {
+      if (els.listDomainsInput) {
+        els.listDomainsInput.value = currentManualDomains.join("\n");
+      }
+      if (els.listDomainsModal) {
+        els.listDomainsModal.classList.add("open");
+        if (els.listDomainsInput) els.listDomainsInput.focus();
+      }
+    });
+  }
+
+  function closeListDomainsModal() {
+    if (els.listDomainsModal) els.listDomainsModal.classList.remove("open");
+  }
+
+  if (els.cancelListDomains) {
+    els.cancelListDomains.addEventListener("click", closeListDomainsModal);
+  }
+
+  if (els.listDomainsModal) {
+    els.listDomainsModal.addEventListener("click", (e) => {
+      if (e.target === els.listDomainsModal) closeListDomainsModal();
+    });
+  }
+
+  if (els.applyListDomains) {
+    els.applyListDomains.addEventListener("click", () => {
+      const raw = els.listDomainsInput ? els.listDomainsInput.value : "";
+      currentManualDomains = ListIngest.parseList(raw);
+      updateManualDomainsUI();
+      closeListDomainsModal();
+    });
+  }
+
   els.showAddList.addEventListener("click", () => openListForm(null));
   els.cancelList.addEventListener("click", () => showListsMain());
 
   els.saveList.addEventListener("click", async () => {
+    const isManual = currentManualDomains.length > 0;
     const form = collectListForm();
-    if (!ListUpdate.validListUrl(form.url)) return flash(I18n.t("msg_invalid_url"), "#ff6b6b");
-    const dup = currentLists.find(l => canonListUrl(l.url) === canonListUrl(form.url) && l.id !== editingListId);
-    if (dup) return flash(I18n.t("msg_list_exists"), "#ff6b6b");
+    if (!isManual && !ListUpdate.validListUrl(form.url)) return flash(I18n.t("msg_invalid_url"), "#ff6b6b");
+    if (!isManual) {
+      const dup = currentLists.find(l => canonListUrl(l.url) === canonListUrl(form.url) && l.id !== editingListId);
+      if (dup) return flash(I18n.t("msg_list_exists"), "#ff6b6b");
+    }
     els.saveList.disabled = true;
     els.saveList.classList.add("busy");
     els.saveList.textContent = I18n.t("btn_saving");
     try {
       const existing = editingListId != null ? currentLists.find(l => l.id === editingListId) : null;
-      const urlChanged = existing && canonListUrl(existing.url) !== canonListUrl(form.url);
-      const proxyChanged = existing && !!existing.viaProxy !== form.viaProxy;
-      const hasError = !!(existing && ListUpdate.hasUpdateError(existing));
-      const needFetch = !existing || urlChanged || proxyChanged || hasError;
-      const res = await sendListMessage(needFetch
-        ? { action: "fetchList", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled }
-        : { action: "saveListMeta", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled });
+      let res;
+      if (isManual) {
+        res = await sendListMessage({
+          action: "saveLocalList",
+          id: editingListId,
+          name: form.name,
+          domains: currentManualDomains,
+          enabled: form.enabled
+        });
+      } else {
+        const urlChanged = existing && canonListUrl(existing.url) !== canonListUrl(form.url);
+        const proxyChanged = existing && !!existing.viaProxy !== form.viaProxy;
+        const hasError = !!(existing && ListUpdate.hasUpdateError(existing));
+        const needFetch = !existing || urlChanged || proxyChanged || hasError || existing.isLocal;
+        res = await sendListMessage(needFetch
+          ? { action: "fetchList", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled }
+          : { action: "saveListMeta", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled });
+      }
       if (res && res.success) {
         try {
           const st = await browser.storage.local.get("proxyLists");

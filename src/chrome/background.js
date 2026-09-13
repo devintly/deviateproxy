@@ -507,6 +507,63 @@ async function saveListMeta(msg) {
   await applyProxySettings();
 }
 
+async function saveLocalList(msg) {
+  const rawDomains = Array.isArray(msg.domains) ? msg.domains.join("\n") : String(msg.domains || "");
+  const domains = ListIngest.parseList(rawDomains);
+  const now = Date.now();
+  const name = String(msg.name || "").trim() || "Локальный список";
+  const existingId = msg.id;
+  let target = null;
+  if (existingId != null) {
+    target = proxyLists.find(x => x.id === existingId);
+  }
+  if (target) {
+    target.name = name;
+    target.url = "";
+    target.isLocal = true;
+    target.format = "txt";
+    target.domains = domains;
+    target.domainCount = domains.length;
+    target.ips = [];
+    target.cidrs = [];
+    target.ipCount = 0;
+    target.viaProxy = false;
+    target.intervalHours = 12;
+    target.updatedAt = now;
+    target.updateError = "";
+    target.updateErrorCode = "";
+    target.updateFailCount = 0;
+    target.type = "proxy";
+    if (msg.enabled !== undefined) target.enabled = msg.enabled !== false;
+  } else {
+    target = {
+      id: ListIngest.ingestRemote("", "").id,
+      name: name,
+      url: "",
+      isLocal: true,
+      format: "txt",
+      domains: domains,
+      domainCount: domains.length,
+      ips: [],
+      cidrs: [],
+      ipCount: 0,
+      viaProxy: false,
+      intervalHours: 12,
+      enabled: msg.enabled !== false,
+      updatedAt: now,
+      updateError: "",
+      updateErrorCode: "",
+      updateFailCount: 0,
+      type: "proxy"
+    };
+    proxyLists.push(target);
+  }
+  await persistLists();
+  rebuildMaps();
+  await applyProxySettings();
+  return target;
+}
+
 async function setListEnabled(id, enabled) {
   const list = proxyLists.find(item => item.id === id);
   if (!list) throw new Error("Список не найден");
@@ -729,6 +786,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       reply(sendResponse, enqueueListUpdate(() => saveListMeta(msg)).then(() => ({ success: true })));
       return;
     }
+    if (msg.action === "saveLocalList") {
+      reply(sendResponse, enqueueListUpdate(() => saveLocalList(msg)).then(() => ({ success: true })));
+      return;
+    }
     if (msg.action === "setListEnabled") {
       reply(sendResponse, enqueueListUpdate(() => setListEnabled(msg.id, msg.enabled)).then(() => ({ success: true })));
       return;
@@ -740,6 +801,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "refreshList") {
       const list = proxyLists.find(x => x.id === msg.id);
       if (!list) { sendResponse({ success: false, error: "Список не найден" }); return; }
+      if (list.isLocal || !list.url) { sendResponse({ success: true }); return; }
       reply(sendResponse, enqueueListUpdate(() => fetchListTask(list.url, list.id, list)).then(() => ({ success: true })));
       return;
     }
