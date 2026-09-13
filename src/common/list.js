@@ -5,28 +5,89 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveBtn = document.getElementById("saveBtn");
   const status = document.getElementById("status");
 
-  function parseRules(text) {
-    const rules = [];
-    const invalid = [];
-    String(text || "").replace(/\r\n/g, "\n").split("\n").forEach((line, index) => {
-      const raw = line.trim();
-      if (!raw) return;
-      const normalized = HostRules.normalizeRule(raw);
-      if (!normalized) invalid.push(index + 1);
-      else if (!rules.includes(normalized)) rules.push(normalized);
-    });
-    return { rules, invalid };
+  function ruleHost(rule) {
+    return String(rule || "").trim().toLowerCase().replace(/^\*\./, "");
   }
 
-  function dropOverlap(proxy, direct) {
-    const d = new Set(direct.map(HostRules.normalizeRule));
-    return proxy.filter(r => !d.has(HostRules.normalizeRule(r)));
+  function parseRules(text) {
+    const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+    const parsedLines = [];
+    const invalid = [];
+
+    lines.forEach((line, index) => {
+      const lineNum = index + 1;
+      const raw = line.trim();
+      if (!raw) {
+        parsedLines.push({ lineNum, raw: "", normalized: "", host: "" });
+        return;
+      }
+      const normalized = HostRules.normalizeRule(raw);
+      if (!normalized) {
+        invalid.push(lineNum);
+        parsedLines.push({ lineNum, raw, normalized: "", host: "" });
+      } else {
+        const host = ruleHost(normalized);
+        parsedLines.push({ lineNum, raw, normalized, host });
+      }
+    });
+
+    const uniqueRules = [];
+    parsedLines.forEach(item => {
+      if (item.normalized && !uniqueRules.includes(item.normalized)) {
+        uniqueRules.push(item.normalized);
+      }
+    });
+
+    return { lines: parsedLines, rules: uniqueRules, invalid };
+  }
+
+  function pruneRedundantWithinList(rules) {
+    const wildHosts = new Set();
+    rules.forEach(r => {
+      if (r.startsWith("*.")) wildHosts.add(ruleHost(r));
+    });
+    return rules.filter(r => {
+      if (!r.startsWith("*.") && wildHosts.has(ruleHost(r))) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function findCrossConflicts(directParsed, proxyParsed) {
+    const directHostMap = new Map();
+    directParsed.lines.forEach(item => {
+      if (item.host) {
+        if (!directHostMap.has(item.host)) directHostMap.set(item.host, []);
+        directHostMap.get(item.host).push(item.lineNum);
+      }
+    });
+
+    const proxyHostMap = new Map();
+    proxyParsed.lines.forEach(item => {
+      if (item.host) {
+        if (!proxyHostMap.has(item.host)) proxyHostMap.set(item.host, []);
+        proxyHostMap.get(item.host).push(item.lineNum);
+      }
+    });
+
+    const directConflicts = new Set();
+    const proxyConflicts = new Set();
+
+    directHostMap.forEach((dLines, host) => {
+      if (proxyHostMap.has(host)) {
+        dLines.forEach(ln => directConflicts.add(ln));
+        proxyHostMap.get(host).forEach(ln => proxyConflicts.add(ln));
+      }
+    });
+
+    return { directConflicts, proxyConflicts };
   }
 
   function flash(text, error) {
     status.style.color = error ? "#ff6b6b" : "#57f287";
     status.textContent = text;
-    setTimeout(() => { if (status.textContent === text) status.textContent = ""; }, 2500);
+    setTimeout(() => { if (status.textContent === text) status.textContent = ""; }, 3000);
   }
 
   function createEditor(textareaId, gutterId, backdropId, containerId) {
@@ -71,21 +132,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       gutter.scrollTop = textarea.scrollTop;
     }
 
-    function setInvalidLines(lineNumbers) {
+    function setHighlightedLines(lineNumbers) {
       invalidSet = new Set(lineNumbers);
       renderLines();
     }
 
-    function validate() {
-      const parsed = parseRules(textarea.value);
-      setInvalidLines(parsed.invalid);
-      return parsed;
+    function parse() {
+      return parseRules(textarea.value);
     }
 
     textarea.addEventListener("input", () => {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
-        validate();
+        validateAll();
       });
     });
 
@@ -93,9 +152,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     return {
       textarea,
-      validate,
+      parse,
       renderLines,
-      setInvalidLines,
+      setHighlightedLines,
       syncScroll
     };
   }
@@ -103,13 +162,34 @@ document.addEventListener("DOMContentLoaded", async () => {
   const proxyEditor = createEditor("proxyEditor", "proxyGutter", "proxyBackdrop", "proxyContainer");
   const directEditor = createEditor("directEditor", "directGutter", "directBackdrop", "directContainer");
 
+  function validateAll() {
+    const directParsed = directEditor.parse();
+    const proxyParsed = proxyEditor.parse();
+    const { directConflicts, proxyConflicts } = findCrossConflicts(directParsed, proxyParsed);
+
+    const directErrors = new Set([...directParsed.invalid, ...directConflicts]);
+    const proxyErrors = new Set([...proxyParsed.invalid, ...proxyConflicts]);
+
+    directEditor.setHighlightedLines(directErrors);
+    proxyEditor.setHighlightedLines(proxyErrors);
+
+    return {
+      directParsed,
+      proxyParsed,
+      directConflicts,
+      proxyConflicts,
+      hasSyntaxErrors: directParsed.invalid.length > 0 || proxyParsed.invalid.length > 0,
+      hasConflicts: directConflicts.size > 0 || proxyConflicts.size > 0
+    };
+  }
+
   const res = await browser.storage.local.get(["proxyRules", "directRules"]);
-  const direct = Array.isArray(res.directRules) ? res.directRules : [];
-  const proxy = dropOverlap(Array.isArray(res.proxyRules) ? res.proxyRules : [], direct);
-  proxyEditor.textarea.value = proxy.join("\n");
-  directEditor.textarea.value = direct.join("\n");
-  proxyEditor.renderLines();
-  directEditor.renderLines();
+  const initialDirect = pruneRedundantWithinList(Array.isArray(res.directRules) ? res.directRules : []);
+  const initialProxy = pruneRedundantWithinList(Array.isArray(res.proxyRules) ? res.proxyRules : []);
+
+  proxyEditor.textarea.value = initialProxy.join("\n");
+  directEditor.textarea.value = initialDirect.join("\n");
+  validateAll();
 
   window.addEventListener("resize", () => {
     proxyEditor.syncScroll();
@@ -117,20 +197,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   saveBtn.addEventListener("click", async () => {
-    const directParsed = directEditor.validate();
-    const proxyParsed = proxyEditor.validate();
-    const invalid = directParsed.invalid.concat(proxyParsed.invalid);
-    if (invalid.length) {
+    const validation = validateAll();
+    if (validation.hasSyntaxErrors) {
+      const invalid = validation.directParsed.invalid.concat(validation.proxyParsed.invalid);
       flash(I18n.t("msg_invalid_rules", { lines: invalid.join(", ") }), true);
       return;
     }
-    const nextDirect = directParsed.rules;
-    const nextProxy = dropOverlap(proxyParsed.rules, nextDirect);
+    if (validation.hasConflicts) {
+      flash(I18n.t("msg_conflict_rules"), true);
+      return;
+    }
+
+    const nextDirect = pruneRedundantWithinList(validation.directParsed.rules);
+    const nextProxy = pruneRedundantWithinList(validation.proxyParsed.rules);
+
     await browser.storage.local.set({ proxyRules: nextProxy, directRules: nextDirect });
     proxyEditor.textarea.value = nextProxy.join("\n");
     directEditor.textarea.value = nextDirect.join("\n");
-    proxyEditor.renderLines();
-    directEditor.renderLines();
+    validateAll();
     flash(typeof I18n !== "undefined" ? I18n.t("list_editor_saved") : "Сохранено");
   });
 
