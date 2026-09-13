@@ -47,25 +47,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     const isIpA = HostRules.isIpHost ? HostRules.isIpHost(hostA) : /^\d+\.\d+\.\d+\.\d+$/.test(hostA);
     const isIpB = HostRules.isIpHost ? HostRules.isIpHost(hostB) : /^\d+\.\d+\.\d+\.\d+$/.test(hostB);
 
-    // Group IPs or put domains first
+    // Group IPs after domain names
     if (isIpA !== isIpB) return isIpA ? 1 : -1;
     if (isIpA && isIpB) {
       return hostA.localeCompare(hostB, undefined, { numeric: true });
     }
 
-    const apexA = (HostRules.apexDomain && HostRules.apexDomain(hostA)) || hostA;
-    const apexB = (HostRules.apexDomain && HostRules.apexDomain(hostB)) || hostB;
-
-    if (apexA !== apexB) {
-      return apexA.localeCompare(apexB);
-    }
-
-    // Same apex domain: apex rule comes first
-    const isApexA = hostA === apexA;
-    const isApexB = hostB === apexB;
-    if (isApexA !== isApexB) return isApexA ? -1 : 1;
-
-    // Subdomains left-to-right
+    // Sort domain names directly left-to-right
     const cmp = hostA.localeCompare(hostB);
     if (cmp !== 0) return cmp;
 
