@@ -6,7 +6,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   function ownPageBase() {
     try { return browser.runtime.getURL(""); } catch (_) { return ""; }
   }
-  function isWebTab(tab) { return HostRules.isWebTab(tab, ownPageBase()); }
   function isOwnPage(url, base) { return HostRules.isOwnPage(url, base); }
 
   function getTabWebUrl(tab) {
@@ -113,6 +112,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     closeInfoBtn: document.getElementById("closeInfoBtn"),
     infoVersion: document.getElementById("infoVersion"),
     conflictBanner: document.getElementById("conflictBanner"),
+    conflictRefresh: document.getElementById("conflictRefreshBtn"),
     toastContainer: document.getElementById("toastContainer")
   };
 
@@ -158,6 +158,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const isIpHost = HostRules.isIpHost;
   const normalize = HostRules.normalizeRule;
+  const isValidProxyHost = ProxyConfig.isValidProxyHost;
+  const isValidProxyPort = ProxyConfig.isValidProxyPort;
   function hasNonLatin(s) {
     return /[^\x00-\x7F]/.test(String(s || ""));
   }
@@ -165,20 +167,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     return String(s || "").replace(/[^\x00-\x7F]/g, "");
   }
   function hostOfRule(rule) { return normalize(rule).replace(/^\*\./, ""); }
-  function wildcardRule(host) {
-    const h = hostOfRule(host);
-    if (!h) return "";
-    return isIpHost(h) ? h : "*." + h;
-  }
-  function displayRuleForHost(host) {
-    const h = hostOfRule(host);
-    if (!h) return "";
-    return h;
-  }
   const matches = HostRules.ruleMatchesHost;
+  // Наборы правил перебираются для каждого домена в списке вкладки, поэтому
+  // нормализованный вид массива считается один раз на сам массив.
+  const normSetCache = new WeakMap();
+  function normSet(list) {
+    let set = normSetCache.get(list);
+    if (!set) {
+      set = new Set();
+      list.forEach(r => {
+        const n = normalize(r);
+        if (n) set.add(n);
+      });
+      normSetCache.set(list, set);
+    }
+    return set;
+  }
   function hasIn(list, rule) {
     const n = normalize(rule);
-    return !!n && list.some(r => normalize(r) === n);
+    return !!n && normSet(list).has(n);
   }
   function hasFullIn(list, host) {
     const h = hostOfRule(host);
@@ -186,7 +193,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (hasIn(list, h)) return true;
     return !isIpHost(h) && hasIn(list, "*." + h);
   }
-  function hasUserRule(rule) { return hasIn(currentRules, rule) || hasIn(currentDirect, rule); }
   function isDirectRule(rule) { return hasIn(currentDirect, rule); }
   function existingUserRule(host) {
     const h = hostOfRule(host);
@@ -211,12 +217,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     removeUserRule(h);
     if (!isIpHost(h)) removeUserRule("*." + h);
   }
+  // Массивы правил пересоздаются, а не мутируются: по их идентичности
+  // кэшируются нормализованные наборы в normSet.
   function setUserRule(rule, action) {
     const n = normalize(rule);
     if (!n) return;
     removeUserRulesForHost(n);
-    if (action === "direct") currentDirect.push(n);
-    else currentRules.push(n);
+    if (action === "direct") currentDirect = currentDirect.concat(n);
+    else currentRules = currentRules.concat(n);
   }
   const apexDomain = HostRules.apexDomain;
   const buildDomainTree = HostRules.buildDomainTree;
@@ -236,13 +244,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (isIpHost(h)) return h;
     const isWild = els.mainWildcard ? els.mainWildcard.classList.contains("active") : true;
     return isWild ? "*." + h : h;
-  }
-  function currentTargetRule() {
-    if (scopeMode === "apex" && pageApex) {
-      const isWild = els.mainWildcard ? els.mainWildcard.classList.contains("active") : true;
-      return isWild ? "*." + pageApex : pageApex;
-    }
-    return effectiveInputRule();
   }
   let coverSeq = 0;
   let lastCover = { host: "", listed: false, listedParent: false, listedParentRule: "", listName: "" };
@@ -333,9 +334,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     return template ? template.cloneNode(true) : null;
   }
 
-  function escapeHtml(s) {
-    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
   const STATUS = {
     none: { get title() { return I18n.t("status_none"); }, tone: "none", icons: ["x"] },
     proxyFull: { get title() { return I18n.t("status_proxy_full"); }, tone: "proxy", icons: ["check"] },
@@ -404,17 +402,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   function paintHostStatus(el, host, covers, overlay) {
     const st = statusForHost(host, covers, overlay);
-    const cap = statusCaptionFor(host, covers, overlay);
+    const cap = statusCaptionFor(host, covers, overlay, st);
     paintStatusEl(el, st, cap.text || st.title);
   }
   function coverInfoOf(host, covers) {
     return coverOf(host, covers) || (lastCover.host === host ? lastCover : null);
   }
-  function statusCaptionFor(host, covers, overlay) {
+  function statusCaptionFor(host, covers, overlay, knownStatus) {
     if (!host) return { text: "", kind: "" };
     const proxy = overlay && Array.isArray(overlay.proxy) ? overlay.proxy : currentRules;
     const direct = overlay && Array.isArray(overlay.direct) ? overlay.direct : currentDirect;
-    const st = statusForHost(host, covers, overlay);
+    const st = knownStatus || statusForHost(host, covers, overlay);
     if (st === STATUS.proxyFull) return { text: "", kind: "proxy" };
     if (st === STATUS.directFull) return { text: "", kind: "direct" };
     if (st === STATUS.proxyApex) {
@@ -478,6 +476,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     refreshToggleBtn();
     refreshListCover();
   }
+  let domainRowAnimTimer = null;
+  // Ряд «создать правило / удалить» анимируется только по нажатию кнопки:
+  // при открытии попапа и вводе домена состояние выставляется мгновенно.
+  function armDomainRowAnimation() {
+    if (!els.domainActionRow) return;
+    els.domainActionRow.classList.add("animate");
+    if (domainRowAnimTimer) clearTimeout(domainRowAnimTimer);
+    domainRowAnimTimer = setTimeout(() => {
+      domainRowAnimTimer = null;
+      els.domainActionRow.classList.remove("animate");
+    }, 400);
+  }
+
   function refreshToggleBtn() {
     const raw = els.domainInput.value;
     const trimmed = raw.trim();
@@ -494,18 +505,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.toggleRule.className = inList ? "danger" : "primary";
     els.toggleRule.disabled = !rule;
     els.domainActionRow.classList.toggle("has-rule", inList);
-    els.domainMode.classList.toggle("show", inList);
     els.domainMode.classList.toggle("on", direct);
     els.domainDirect.checked = direct;
     const hintSpace = I18n.t("hint_no_spaces");
     const hintLatin = I18n.t("hint_latin_only");
     const hintDot = I18n.t("hint_dot_required");
+    const hintTld = I18n.t("hint_invalid_tld");
     const cur = els.rulesStatus.textContent;
+    const inputWrap = els.domainInput ? els.domainInput.closest(".inputWrap") : null;
     if (trimmed && !rule) {
+      if (inputWrap) inputWrap.classList.add("invalid");
       els.rulesStatus.style.color = "#ff6b6b";
-      els.rulesStatus.textContent = /\s/.test(trimmed) ? hintSpace : hasNonLatin(trimmed) ? hintLatin : hintDot;
-    } else if (cur === hintSpace || cur === hintLatin || cur === hintDot) {
-      els.rulesStatus.textContent = "";
+      let msg = hintDot;
+      if (/\s/.test(trimmed)) msg = hintSpace;
+      else if (hasNonLatin(trimmed)) msg = hintLatin;
+      else if (h && !isIp && h.indexOf(".") >= 0 && HostRules.hasValidTld && !HostRules.hasValidTld(h)) msg = hintTld;
+      els.rulesStatus.textContent = msg;
+    } else {
+      if (inputWrap) inputWrap.classList.remove("invalid");
+      if (cur === hintSpace || cur === hintLatin || cur === hintDot || cur === hintTld) {
+        els.rulesStatus.textContent = "";
+      }
     }
   }
   let activeToast = null;
@@ -752,7 +772,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const picked = !!pick.checked;
       line.classList.toggle("picked", picked);
       const host = pick.dataset.host || hostOfRule(pick.dataset.rule);
-      paintHostStatus(mark, host, covers, overlay || collectOverlayRules());
+      paintHostStatus(mark, host, covers, overlay);
     }
     function refreshAllDomainLines() {
       const overlay = collectOverlayRules();
@@ -907,7 +927,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       });
 
-      refreshDomainLine(line);
       nodeEl.appendChild(line);
 
       if (hasChildren) {
@@ -1237,7 +1256,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     saveFormDraft();
   }
 
+  function clearProxyValidation() {
+    if (els.pHost) els.pHost.classList.remove("invalid");
+    if (els.pPort) els.pPort.classList.remove("invalid");
+  }
+
   function resetProxyForm() {
+    clearProxyValidation();
     els.pName.value = "";
     els.pType.value = "socks";
     els.pHost.value = "";
@@ -1247,6 +1272,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function openProxyForm(item) {
+    clearProxyValidation();
     els.proxyMain.style.display = "none";
     els.proxyForm.style.display = "flex";
     if (item) {
@@ -1516,10 +1542,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.listsForm.style.display = "flex";
     if (item) {
       editingListId = item.id;
-      els.lName.value = item.name || "";
+      const isLocalItem = !!(item.isLocal || (!item.url && (item.domains || []).length > 0));
+      const rawName = (item.name || "").trim();
+      const isDefaultLocalName = isLocalItem && (
+        rawName === "Локальный список" ||
+        rawName === "Local list" ||
+        (typeof I18n !== "undefined" && rawName === I18n.t("lbl_local_list"))
+      );
+      els.lName.value = isDefaultLocalName ? "" : (item.name || "");
       els.lInterval.value = String(Number(item.intervalHours) > 0 ? Number(item.intervalHours) : 12);
       els.lViaProxy.checked = !!item.viaProxy;
-      if (item.isLocal || (!item.url && (item.domains || []).length > 0)) {
+      if (isLocalItem) {
         currentManualDomains = (item.domains || []).slice();
         els.lUrl.value = "";
       } else {
@@ -1693,13 +1726,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           els.deleteList.style.display = editingListId ? "" : "none";
 
           if (lf.domainsModalOpen && els.listDomainsModal) {
-            if (els.listDomainsInput) {
-              els.listDomainsInput.value = lf.domainsModalInput || currentManualDomains.join("\n");
-            }
-            listDomainsInvalidLines = new Set();
+            listDomainsEditor.setValue(lf.domainsModalInput || currentManualDomains.join("\n"));
             els.listDomainsModal.classList.add("open");
             validateListDomainsLive();
-            syncListDomainsScroll();
           }
         } else if (d.proxyForm) {
           const pf = d.proxyForm;
@@ -1727,38 +1756,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function checkProxyConflict() {
     try {
       let blocked = false;
-      let level = "";
 
-      if (browser.proxy && browser.proxy.settings && typeof browser.proxy.settings.get === "function") {
-        try {
-          const settings = await new Promise(resolve => {
-            browser.proxy.settings.get({ incognito: false }, s => {
-              const err = browser.runtime && browser.runtime.lastError;
-              resolve(err ? null : s);
+      try {
+        const res = await browser.runtime.sendMessage({ action: "checkProxyControl" });
+        if (res && typeof res.isBlocked === "boolean") {
+          blocked = res.isBlocked;
+        }
+      } catch (_) {
+        if (browser.proxy && browser.proxy.settings && typeof browser.proxy.settings.get === "function") {
+          try {
+            const settings = await new Promise(resolve => {
+              browser.proxy.settings.get({ incognito: false }, s => {
+                const err = browser.runtime && browser.runtime.lastError;
+                resolve(err ? null : s);
+              });
             });
-          });
-          level = (settings && settings.levelOfControl) || "";
-          const val = (settings && settings.value) || {};
-          const mode = (val && val.mode) || "";
-
-          if (level === "controlled_by_other_extensions" || level === "not_controllable") {
-            blocked = true;
-          } else if (!extensionEnabled && mode && mode !== "system" && mode !== "direct") {
-            blocked = true;
-          } else if (extensionEnabled && level === "controllable_by_this_extension" && mode && mode !== "system" && mode !== "direct") {
-            blocked = true;
-          }
-        } catch (_) {}
-      }
-
-      if (!blocked) {
-        try {
-          const res = await browser.runtime.sendMessage({ action: "checkProxyControl" });
-          if (res && res.isBlocked) {
-            blocked = true;
-            level = res.levelOfControl || level;
-          }
-        } catch (_) {}
+            blocked = ProxyConfig.isProxyControlBlocked((settings && settings.levelOfControl) || "");
+          } catch (_) {}
+        }
       }
 
       const wasBlocked = isConflictBlocked;
@@ -1778,6 +1793,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         refreshIcon();
       }
     } catch (_) {}
+  }
+
+  async function refreshConflictStatus() {
+    if (!els.conflictRefresh || els.conflictRefresh.disabled) return;
+    els.conflictRefresh.disabled = true;
+    els.conflictRefresh.classList.add("busy");
+    try {
+      await checkProxyConflict();
+    } finally {
+      els.conflictRefresh.disabled = false;
+      els.conflictRefresh.classList.remove("busy");
+    }
   }
 
   let isPingingProxies = false;
@@ -1834,16 +1861,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   els.saveProxy.addEventListener("click", async () => {
+    clearProxyValidation();
     const form = collectProxyForm();
-    if (!form.host || !(form.port > 0 && form.port < 65536)) {
+    const isHostEmpty = !form.host;
+    const isPortEmpty = !els.pPort.value.trim();
+
+    if (isHostEmpty || isPortEmpty) {
+      if (isHostEmpty && els.pHost) els.pHost.classList.add("invalid");
+      if (isPortEmpty && els.pPort) els.pPort.classList.add("invalid");
       return flash(I18n.t("msg_fill_fields"), "#ff6b6b");
     }
+
+    if (!isValidProxyHost(form.host)) {
+      if (els.pHost) els.pHost.classList.add("invalid");
+      return flash(I18n.t("msg_invalid_proxy_host"), "#ff6b6b");
+    }
+
+    if (!isValidProxyPort(els.pPort.value)) {
+      if (els.pPort) els.pPort.classList.add("invalid");
+      return flash(I18n.t("msg_invalid_proxy_port"), "#ff6b6b");
+    }
+
     const dup = currentProxies.find(p => ProxyConfig.proxyKey(p) === ProxyConfig.proxyKey(form) && p.id !== editingProxyId);
     if (dup) return flash(I18n.t("msg_proxy_exists"), "#ff6b6b");
     if (editingProxyId != null) {
       const next = currentProxies.map(p => p.id === editingProxyId ? Object.assign({}, p, form) : p);
       await persistProxies(next);
-      flash(I18n.t("msg_proxy_saved"));
+      flash(I18n.t("msg_saved"));
     } else {
       const item = Object.assign({ id: ProxyConfig.uniqueId(), enabled: !currentProxies.length }, form);
       await persistProxies(currentProxies.concat(item));
@@ -1865,10 +1909,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const trimmed = raw.trim();
     const rule = effectiveInputRule();
     if (!rule) {
-      const msg = !trimmed ? I18n.t("hint_empty_rule") : /\s/.test(trimmed) ? I18n.t("hint_no_spaces") : hasNonLatin(trimmed) ? I18n.t("hint_latin_only") : I18n.t("hint_dot_required");
+      const h = hostOfRule(trimmed) || normalize(trimmed);
+      const isIp = isIpHost(h);
+      let msg = !trimmed ? I18n.t("hint_empty_rule") : /\s/.test(trimmed) ? I18n.t("hint_no_spaces") : hasNonLatin(trimmed) ? I18n.t("hint_latin_only") : I18n.t("hint_dot_required");
+      if (trimmed && h && !isIp && h.indexOf(".") >= 0 && HostRules.hasValidTld && !HostRules.hasValidTld(h)) {
+        msg = I18n.t("hint_invalid_tld");
+      }
       return flash(msg, "#ff6b6b");
     }
     const existing = existingUserRule(rule);
+    armDomainRowAnimation();
     if (existing) {
       removeUserRulesForHost(existing);
       refreshIcon();
@@ -1953,132 +2003,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (els.proxySearch) els.proxySearch.addEventListener("input", filterProxies);
   if (els.listsSearch) els.listsSearch.addEventListener("input", filterLists);
 
-  function ruleHost(rule) {
-    return String(rule || "").trim().toLowerCase().replace(/^\*\./, "");
-  }
+  const pruneRedundant = HostRules.pruneRedundant;
 
-  function compareRules(a, b) {
-    const hostA = ruleHost(a);
-    const hostB = ruleHost(b);
-    const isIpA = HostRules.isIpHost ? HostRules.isIpHost(hostA) : /^\d+\.\d+\.\d+\.\d+$/.test(hostA);
-    const isIpB = HostRules.isIpHost ? HostRules.isIpHost(hostB) : /^\d+\.\d+\.\d+\.\d+$/.test(hostB);
-
-    if (isIpA !== isIpB) return isIpA ? 1 : -1;
-    if (isIpA && isIpB) {
-      return hostA.localeCompare(hostB, undefined, { numeric: true });
-    }
-
-    const cmp = hostA.localeCompare(hostB);
-    if (cmp !== 0) return cmp;
-
-    const wildA = a.startsWith("*.");
-    const wildB = b.startsWith("*.");
-    if (wildA !== wildB) return wildA ? -1 : 1;
-
-    return a.localeCompare(b);
-  }
-
-  function sortRules(rules) {
-    return rules.slice().sort(compareRules);
-  }
-
-  function pruneRedundantWithinList(rules) {
-    const wildHosts = new Set();
-    rules.forEach(r => {
-      if (r.startsWith("*.")) wildHosts.add(ruleHost(r));
-    });
-    const filtered = rules.filter(r => {
-      if (!r.startsWith("*.") && wildHosts.has(ruleHost(r))) {
-        return false;
-      }
-      return true;
-    });
-    return sortRules(filtered);
-  }
-
-  let listDomainsInvalidLines = new Set();
-  let listDomainsRafId = null;
-
-  function renderListDomainsEditor() {
-    if (!els.listDomainsInput || !els.listDomainsGutter || !els.listDomainsBackdrop) return;
-    const lines = String(els.listDomainsInput.value || "").replace(/\r\n/g, "\n").split("\n");
-    const count = Math.max(lines.length, 1);
-    const gutterFrag = document.createDocumentFragment();
-    const backdropFrag = document.createDocumentFragment();
-
-    for (let i = 0; i < count; i++) {
-      const lineNum = i + 1;
-      const isInvalid = listDomainsInvalidLines.has(lineNum);
-
-      const gDiv = document.createElement("div");
-      gDiv.className = `gutter-line${isInvalid ? " invalid" : ""}`;
-      gDiv.textContent = String(lineNum);
-      gutterFrag.appendChild(gDiv);
-
-      const bDiv = document.createElement("div");
-      bDiv.className = `hl-line${isInvalid ? " invalid" : ""}`;
-      backdropFrag.appendChild(bDiv);
-    }
-
-    els.listDomainsGutter.textContent = "";
-    els.listDomainsGutter.appendChild(gutterFrag);
-    els.listDomainsBackdrop.textContent = "";
-    els.listDomainsBackdrop.appendChild(backdropFrag);
-    if (els.listDomainsContainer) {
-      els.listDomainsContainer.classList.toggle("has-error", listDomainsInvalidLines.size > 0);
-    }
-    syncListDomainsScroll();
-  }
-
-  function syncListDomainsScroll() {
-    if (!els.listDomainsInput || !els.listDomainsBackdrop || !els.listDomainsGutter) return;
-    els.listDomainsBackdrop.scrollTop = els.listDomainsInput.scrollTop;
-    els.listDomainsBackdrop.scrollLeft = els.listDomainsInput.scrollLeft;
-    els.listDomainsGutter.scrollTop = els.listDomainsInput.scrollTop;
-  }
+  const listDomainsEditor = RuleEditor.create({
+    textarea: els.listDomainsInput,
+    gutter: els.listDomainsGutter,
+    backdrop: els.listDomainsBackdrop,
+    container: els.listDomainsContainer,
+    onChange: () => validateListDomainsLive()
+  });
 
   function validateListDomainsLive() {
-    if (!els.listDomainsInput) return { validRules: [], invalid: [] };
-    const lines = String(els.listDomainsInput.value || "").replace(/\r\n/g, "\n").split("\n");
-    const invalid = [];
-    const validRules = [];
-
-    lines.forEach((line, index) => {
-      const lineNum = index + 1;
-      const raw = line.trim();
-      if (!raw) return;
-      const normalized = HostRules.normalizeRule(raw);
-      if (!normalized) {
-        invalid.push(lineNum);
-      } else if (!validRules.includes(normalized)) {
-        validRules.push(normalized);
-      }
-    });
-
-    listDomainsInvalidLines = new Set(invalid);
-    renderListDomainsEditor();
-    return { validRules, invalid };
-  }
-
-  function scheduleListDomainsRender() {
-    if (listDomainsRafId) cancelAnimationFrame(listDomainsRafId);
-    listDomainsRafId = requestAnimationFrame(validateListDomainsLive);
-  }
-
-  if (els.listDomainsInput) {
-    els.listDomainsInput.addEventListener("input", scheduleListDomainsRender);
-    els.listDomainsInput.addEventListener("scroll", syncListDomainsScroll, { passive: true });
+    const parsed = listDomainsEditor.parse();
+    listDomainsEditor.setInvalidLines(parsed.invalid);
+    return { validRules: parsed.rules, invalid: parsed.invalid };
   }
 
   if (els.openListDomains) {
     els.openListDomains.addEventListener("click", () => {
-      if (els.listDomainsInput) {
-        els.listDomainsInput.value = currentManualDomains.join("\n");
-      }
-      listDomainsInvalidLines = new Set();
+      listDomainsEditor.setValue(currentManualDomains.join("\n"));
+      listDomainsEditor.setInvalidLines([]);
       if (els.listDomainsModal) {
         els.listDomainsModal.classList.add("open");
-        renderListDomainsEditor();
         if (els.listDomainsInput) {
           setTimeout(() => els.listDomainsInput.focus(), 50);
         }
@@ -2103,68 +2049,28 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function appendListDomainsText(text) {
-    if (!els.listDomainsInput) return;
-    const currentVal = els.listDomainsInput.value.trim();
-    const incomingVal = String(text || "").trim();
-    if (!incomingVal) return;
-
-    els.listDomainsInput.value = currentVal ? `${currentVal}\n${incomingVal}` : incomingVal;
+    if (!listDomainsEditor.appendText(text)) return;
     validateListDomainsLive();
     els.listDomainsInput.focus();
-    syncListDomainsScroll();
+    listDomainsEditor.syncScroll();
     saveFormDraft();
   }
 
   if (els.importListDomains) {
     els.importListDomains.addEventListener("click", () => {
       saveFormDraft();
-      const importUrl = browser.runtime.getURL("import.html");
-      browser.tabs.create({ url: importUrl });
-    });
-  }
-
-  if (els.importListDomainsFile) {
-    els.importListDomainsFile.addEventListener("change", () => {
-      const file = els.importListDomainsFile.files && els.importListDomainsFile.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        appendListDomainsText(e.target && e.target.result);
-      };
-      reader.readAsText(file);
-    });
-  }
-
-  if (els.listDomainsContainer) {
-    ["dragenter", "dragover"].forEach(evt => {
-      els.listDomainsContainer.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        els.listDomainsContainer.classList.add("drag-over");
-      });
-    });
-
-    ["dragleave", "drop"].forEach(evt => {
-      els.listDomainsContainer.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        els.listDomainsContainer.classList.remove("drag-over");
-      });
-    });
-
-    els.listDomainsContainer.addEventListener("drop", (e) => {
-      const dt = e.dataTransfer;
-      if (dt && dt.files && dt.files.length) {
-        const file = dt.files[0];
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          appendListDomainsText(ev.target && ev.target.result);
-        };
-        reader.readAsText(file);
+      const isAndroid = document.documentElement.classList.contains("android") || /Android/i.test(navigator.userAgent);
+      if (isAndroid && els.importListDomainsFile) {
+        els.importListDomainsFile.value = "";
+        els.importListDomainsFile.click();
+      } else {
+        browser.tabs.create({ url: browser.runtime.getURL("import.html") });
       }
     });
   }
+
+  FileImport.attachFileInput(els.importListDomainsFile, appendListDomainsText);
+  FileImport.attachDropZone(els.listDomainsContainer, appendListDomainsText);
 
   if (els.applyListDomains) {
     els.applyListDomains.addEventListener("click", () => {
@@ -2173,11 +2079,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         flash(I18n.t("msg_invalid_rules", { lines: invalid.slice(0, 10).join(", ") }), "#ff6b6b");
         return;
       }
-      const sorted = pruneRedundantWithinList(validRules);
+      const sorted = pruneRedundant(validRules);
       currentManualDomains = sorted;
-      if (els.listDomainsInput) {
-        els.listDomainsInput.value = sorted.join("\n");
-      }
+      listDomainsEditor.setValue(sorted.join("\n"));
       updateManualDomainsUI();
       closeListDomainsModal();
       saveFormDraft();
@@ -2333,6 +2237,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  if (els.conflictRefresh) {
+    els.conflictRefresh.addEventListener("click", () => refreshConflictStatus());
+  }
+
   els.powerBtn.addEventListener("click", async () => {
     if (isConflictBlocked) {
       showToast(I18n.t("conflict_warning_desc"), "error");
@@ -2340,7 +2248,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     if (!hasConfiguredProxy()) {
       showProxyTab();
-      flash(I18n.t("msg_setup_proxy_first"), "#ff6b6b");
+      flash(I18n.t("power_setup"), "#ff6b6b");
       return;
     }
     extensionEnabled = !extensionEnabled;
@@ -2411,8 +2319,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.listDomainsInput
   ].forEach(el => {
     if (!el) return;
-    el.addEventListener("input", saveFormDraft);
-    el.addEventListener("change", saveFormDraft);
+    el.addEventListener("input", () => {
+      if (el === els.pHost || el === els.pPort) el.classList.remove("invalid");
+      saveFormDraft();
+    });
+    el.addEventListener("change", () => {
+      if (el === els.pHost || el === els.pPort) el.classList.remove("invalid");
+      saveFormDraft();
+    });
   });
 
   await loadState();

@@ -6,21 +6,36 @@
     catch (e) { return /\.pac(\?|#|$)/i.test(String(url || "")); }
   }
 
+  // Маска `*.` сохраняется в том виде, в котором её записали: для списков она
+  // равносильна домену без маски, но пользователь должен видеть свой текст.
   function parseList(text) {
-    var domains = {};
+    var order = [];
+    var wildcards = {};
     var lines = String(text || "").split("\n");
+
+    function add(value) {
+      var wild = value.indexOf("*.") === 0;
+      var host = wild ? value.slice(2) : value;
+      if (!host) return;
+      if (wildcards[host] === undefined) order.push(host);
+      if (wildcards[host] === undefined || wild) wildcards[host] = wild;
+    }
+
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim().toLowerCase();
       var commentIdx = line.search(/\s+[#!]/);
       if (commentIdx >= 0) line = line.slice(0, commentIdx).trim();
       if (!line || line.charAt(0) === "!" || line.charAt(0) === "#") continue;
       var matchHosts = line.match(/^(?:0\.0\.0\.0|127\.0\.0\.1)\s+([^\s]+)/);
-      if (matchHosts) { domains[matchHosts[1]] = 1; continue; }
+      if (matchHosts) { add(matchHosts[1]); continue; }
       if (/^(?:\*\.)?([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/i.test(line)) {
-        domains[line.replace(/^\*\./, "")] = 1;
+        add(line);
       }
     }
-    return Object.keys(domains);
+
+    return order.map(function (host) {
+      return wildcards[host] ? "*." + host : host;
+    });
   }
 
   function fail(code, text) {
@@ -124,7 +139,13 @@
     });
   }
 
-  var api = { isPacUrl: isPacUrl, parseList: parseList, ingestRemote: ingestRemote, ingestRemoteAsync: ingestRemoteAsync };
+  var api = {
+    isPacUrl: isPacUrl,
+    parseList: parseList,
+    uniqueId: uniqueId,
+    ingestRemote: ingestRemote,
+    ingestRemoteAsync: ingestRemoteAsync
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   root.ListIngest = api;
 })(typeof self !== "undefined" ? self : this);

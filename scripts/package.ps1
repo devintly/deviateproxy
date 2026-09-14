@@ -1,5 +1,6 @@
 ﻿# PowerShell сборщик пакетов DeviateProxy для Windows
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $Root = Split-Path -Parent $PSScriptRoot
@@ -60,13 +61,28 @@ foreach ($target in $Targets) {
 
     $zipPath = Join-Path $Dist "deviateproxy-$target-$version.zip"
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($outDir, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
+    # Firefox/XPI требует POSIX-пути со слэшем; CreateFromDirectory на Windows пишет "\".
+    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        Get-ChildItem -Path $outDir -Recurse -File | ForEach-Object {
+            $rel = $_.FullName.Substring($outDir.Length).TrimStart("\", "/").Replace("\", "/")
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal)
+        }
+    } finally {
+        $zip.Dispose()
+    }
 
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     $hasManifest = $zip.Entries | Where-Object { $_.FullName -eq "manifest.json" }
+    $badSlash = $zip.Entries | Where-Object { $_.FullName -match '\\' }
     $zip.Dispose()
     if (-not $hasManifest) {
         throw "$(Split-Path $zipPath -Leaf): manifest.json должен быть в корне архива"
+    }
+    if ($badSlash) {
+        throw "$(Split-Path $zipPath -Leaf): в архиве есть пути с обратным слэшем"
     }
 
     $fileCount = (Get-ChildItem -Path $outDir -Recurse -File).Count

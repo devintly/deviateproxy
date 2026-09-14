@@ -16,9 +16,17 @@ vm.createContext(sandbox);
 vm.runInContext(code, sandbox, { filename: "pac-parse.js" });
 const api = sandbox.PacParse || sandbox.module.exports;
 const proxyConfigPath = path.join(ROOT, "src", "common", "proxy-config.js");
-const proxySandbox = { module: { exports: {} }, crypto: require("crypto").webcrypto };
+const proxySandbox = { module: { exports: {} }, crypto: require("crypto").webcrypto, URL };
 proxySandbox.exports = proxySandbox.module.exports;
 vm.createContext(proxySandbox);
+const tldsPath = path.join(ROOT, "src", "common", "tlds.js");
+if (fs.existsSync(tldsPath)) {
+  vm.runInContext(fs.readFileSync(tldsPath, "utf8"), proxySandbox, { filename: "tlds.js" });
+}
+const hostRulesPath = path.join(ROOT, "src", "common", "host-rules.js");
+if (fs.existsSync(hostRulesPath)) {
+  vm.runInContext(fs.readFileSync(hostRulesPath, "utf8"), proxySandbox, { filename: "host-rules.js" });
+}
 vm.runInContext(fs.readFileSync(proxyConfigPath, "utf8"), proxySandbox, { filename: "proxy-config.js" });
 const proxyApi = proxySandbox.module.exports;
 
@@ -63,6 +71,31 @@ const c = { host: "127.0.0.1", port: 2080, username: "u1", password: "p1", name:
 assert(proxyApi.proxyKey(a) !== proxyApi.proxyKey(b), "same host/port with different login must not be a duplicate");
 assert(proxyApi.proxyKey(a) !== proxyApi.proxyKey(c), "proxy type must affect duplicate key");
 assert(proxyApi.proxyKey({ host: "127.0.0.1", port: 2080 }) !== proxyApi.proxyKey({ host: "127.0.0.1", port: 2080, username: "u", password: "p" }), "empty auth is not the same as filled auth");
-assert(proxyApi.uniqueId() !== proxyApi.uniqueId(), "generated IDs must be unique");
+assert(proxyApi.isValidProxyHost("localhost"), "localhost is valid proxy host");
+assert(proxyApi.isValidProxyHost("127.0.0.1"), "valid ipv4 host");
+assert(proxyApi.isValidProxyHost("proxy.example.com"), "valid domain host");
+assert(proxyApi.isValidProxyHost("sub-domain.co.uk"), "valid multi-level domain");
+assert(proxyApi.isValidProxyHost("[2001:db8::1]"), "valid ipv6 host");
+assert(!proxyApi.isValidProxyHost("999.999.999.999"), "invalid ipv4 rejected");
+assert(!proxyApi.isValidProxyHost("12345"), "plain digits rejected");
+assert(!proxyApi.isValidProxyHost("word"), "plain word rejected");
+assert(!proxyApi.isValidProxyHost(""), "empty host rejected");
+assert(!proxyApi.isValidProxyHost("foo bar.com"), "host with space rejected");
+
+assert(proxyApi.isValidProxyPort(80), "port 80 valid");
+assert(proxyApi.isValidProxyPort(1080), "port 1080 valid");
+assert(proxyApi.isValidProxyPort(65535), "port 65535 valid");
+assert(proxyApi.isValidProxyPort("1080"), "string port '1080' valid");
+assert(!proxyApi.isValidProxyPort(0), "port 0 invalid");
+assert(!proxyApi.isValidProxyPort(-1), "negative port invalid");
+assert(!proxyApi.isValidProxyPort(65536), "port 65536 invalid");
+assert(!proxyApi.isValidProxyPort(99999), "port 99999 invalid");
+assert(!proxyApi.isValidProxyPort("abc"), "non-numeric port invalid");
+
+assert(proxyApi.isProxyControlBlocked("controlled_by_other_extensions"), "another extension is a conflict");
+assert(proxyApi.isProxyControlBlocked("not_controllable"), "policy lock is a conflict");
+assert(!proxyApi.isProxyControlBlocked("controlled_by_this_extension"), "own PAC is not a conflict");
+assert(!proxyApi.isProxyControlBlocked("controllable_by_this_extension"), "free slot is not a conflict");
+assert(!proxyApi.isProxyControlBlocked(""), "empty control level is not a conflict");
 
 console.log("test-proxy-info: ok");

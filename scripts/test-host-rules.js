@@ -16,6 +16,7 @@ const sandbox = { console, module: { exports: {} }, self: {}, URL, Set };
 sandbox.exports = sandbox.module.exports;
 vm.createContext(sandbox);
 load("pac-parse.js", sandbox);
+load("tlds.js", sandbox);
 load("host-rules.js", sandbox);
 const api = sandbox.HostRules || sandbox.self.HostRules || sandbox.module.exports;
 
@@ -83,6 +84,32 @@ assert(!api.hostIsProxied("skip.test", true, maps, false), "direct rule wins");
 assert(!api.hostIsProxied("cdn.example.com", false, maps, false), "disabled extension");
 assert(!api.ruleMatchesHost("www.example.com", "example.com"), "UI matcher does not match www subdomain for exact rule");
 assert(api.ruleMatchesHost("www.example.com", "*.example.com"), "UI matcher matches www subdomain for wildcard rule");
+
+// В списках домен с маской и без неё маршрутизируются одинаково: и апекс,
+// и поддомены идут через прокси, поэтому сохранённая маска ничего не ломает.
+const maskedList = api.rebuildMaps([], [], [{ id: "m", enabled: true, format: "txt", domains: ["*.masked.example"], ips: [], cidrs: [], updatedAt: 1 }]);
+assert(api.hostIsProxied("masked.example", true, maskedList), "mask covers the apex");
+assert(api.hostIsProxied("cdn.masked.example", true, maskedList), "mask covers subdomains");
+assert(!api.hostIsProxied("notmasked.example", true, maskedList), "mask does not leak to other hosts");
+const plainList = api.rebuildMaps([], [], [{ id: "p", enabled: true, format: "txt", domains: ["masked.example"], ips: [], cidrs: [], updatedAt: 1 }]);
+assert(api.hostIsProxied("masked.example", true, plainList), "plain list domain covers the apex");
+assert(api.hostIsProxied("cdn.masked.example", true, plainList), "plain list domain covers subdomains");
+
+// Пересборка карт при неизменных входных данных должна отдавать те же карты:
+// на этом держится отказ от повторной сборки PAC и пересчёта вкладок.
+const listInput = { id: "l1", enabled: true, format: "txt", domains: ["listed.example"], ips: [], cidrs: [], updatedAt: 100 };
+const baseMaps = api.rebuildMaps(["a.example"], ["b.example"], [listInput]);
+assert(api.rebuildMaps(["a.example"], ["b.example"], [listInput]) === baseMaps, "identical input must reuse maps");
+assert(api.rebuildMaps(["a.example"], ["b.example"], [Object.assign({}, listInput)]) === baseMaps, "list copy must reuse maps");
+assert(api.rebuildMaps(["a.example", "c.example"], ["b.example"], [listInput]) !== baseMaps, "new proxy rule must rebuild");
+assert(api.rebuildMaps(["a.example"], [], [listInput]) !== baseMaps, "dropped direct rule must rebuild");
+assert(api.rebuildMaps(["a.example"], ["b.example"], [Object.assign({}, listInput, { updatedAt: 200 })]) !== baseMaps, "updated list must rebuild");
+assert(api.rebuildMaps(["a.example"], ["b.example"], [Object.assign({}, listInput, { enabled: false })]) !== baseMaps, "disabled list must rebuild");
+assert(api.rebuildMaps(["a.example"], ["b.example"], [Object.assign({}, listInput, { viaProxy: true, url: "https://lists.test/l.txt" })]) !== baseMaps, "viaProxy url must rebuild");
+const reusedMaps = api.rebuildMaps(["a.example"], ["b.example"], [listInput]);
+assert(api.hostIsProxied("a.example", true, reusedMaps), "reused maps keep proxy rules");
+assert(!api.hostIsProxied("b.example", true, reusedMaps), "reused maps keep direct rules");
+assert(api.hostIsProxied("listed.example", true, reusedMaps), "reused maps keep list domains");
 
 const remembered = {};
 assert(api.rememberHost(remembered, 1, "one.example", 1) === "one.example", "first host remembered");

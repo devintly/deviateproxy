@@ -63,11 +63,13 @@
       hint_no_spaces: "Уберите пробелы",
       hint_latin_only: "Только латиница",
       hint_dot_required: "Нужна точка в домене",
+      hint_invalid_tld: "Несуществующая доменная зона",
       hint_empty_rule: "Пустое правило",
-      msg_proxy_saved: "Сохранено",
       msg_proxy_added: "Прокси добавлен",
       msg_proxy_deleted: "Прокси удален",
       msg_fill_fields: "Заполните хост и порт",
+      msg_invalid_proxy_host: "Введите корректный IP адрес или домен хоста",
+      msg_invalid_proxy_port: "Введите допустимый порт (1-65535)",
       msg_proxy_exists: "Прокси добавить нельзя, он уже существует",
       msg_invalid_url: "Введите корректный URL",
       msg_list_exists: "Список добавить нельзя, он уже существует",
@@ -82,14 +84,8 @@
       msg_copied: "Домен скопирован",
       msg_added: "добавлено: {count}",
       msg_removed: "удалено: {count}",
-      msg_setup_proxy_first: "Сначала добавьте прокси",
       updated_never: "еще не обновлялся",
       lbl_updated: "Обновлён",
-      list_editor_title: "Редактор правил",
-      list_editor_proxy: "Проксировать",
-      list_editor_direct: "Напрямую",
-      list_editor_save: "Сохранить",
-      list_editor_saved: "Сохранено",
       status_proxied_by_rule: "Проксируется правилом {rule}",
       status_direct_by_rule: "Идёт напрямую правилом {rule}",
       status_proxied_by_list: "Проксируется списком {name}",
@@ -112,8 +108,6 @@
       error_parse_timeout: "Разбор списка превысил время ожидания",
       error_parse: "Не удалось разобрать список",
       error_proxy_apply: "Не удалось применить настройки прокси",
-      placeholder_proxy_name: "Если пусто — будет адрес",
-      placeholder_list_name: "Если пусто — будет ссылка",
       placeholder_list_url: "https://.../filter.txt или https://.../proxy.pac",
       placeholder_manual_domains: "example.com\n*.example.com",
       lbl_local_list: "Локальный список",
@@ -195,11 +189,13 @@
       hint_no_spaces: "Remove spaces",
       hint_latin_only: "Latin characters only",
       hint_dot_required: "Domain name and dot required",
+      hint_invalid_tld: "Invalid top-level domain",
       hint_empty_rule: "Empty rule",
-      msg_proxy_saved: "Saved",
       msg_proxy_added: "Proxy added",
       msg_proxy_deleted: "Proxy deleted",
       msg_fill_fields: "Enter host and port",
+      msg_invalid_proxy_host: "Enter a valid IP address or hostname",
+      msg_invalid_proxy_port: "Enter a valid port (1-65535)",
       msg_proxy_exists: "Proxy already exists",
       msg_invalid_url: "Enter a valid URL",
       msg_list_exists: "List already exists",
@@ -214,14 +210,8 @@
       msg_copied: "Domain copied",
       msg_added: "added: {count}",
       msg_removed: "removed: {count}",
-      msg_setup_proxy_first: "Configure proxy first",
       updated_never: "never updated",
       lbl_updated: "Updated",
-      list_editor_title: "Rule Editor",
-      list_editor_proxy: "Proxy",
-      list_editor_direct: "Direct",
-      list_editor_save: "Save",
-      list_editor_saved: "Saved",
       status_proxied_by_rule: "Proxied by rule {rule}",
       status_direct_by_rule: "Direct by rule {rule}",
       status_proxied_by_list: "Proxied by list {name}",
@@ -244,8 +234,6 @@
       error_parse_timeout: "List parsing timed out",
       error_parse: "Could not parse the list",
       error_proxy_apply: "Could not apply proxy settings",
-      placeholder_proxy_name: "If empty — host will be used",
-      placeholder_list_name: "If empty — URL will be used",
       placeholder_list_url: "https://.../filter.txt or https://.../proxy.pac",
       placeholder_manual_domains: "example.com\n*.example.com",
       lbl_local_list: "Local list",
@@ -292,10 +280,10 @@
 
   function t(key, params) {
     const dict = MESSAGES[currentLang] || MESSAGES.en;
-    let str = dict[key] || (MESSAGES.en && MESSAGES.en[key]) || key;
+    let str = dict[key] || MESSAGES.en[key] || key;
     if (params) {
       Object.keys(params).forEach(p => {
-        str = str.replace(new RegExp(`\\{${p}\\}`, "g"), params[p]);
+        str = str.split(`{${p}}`).join(params[p]);
       });
     }
     return str;
@@ -342,15 +330,7 @@
     return currentLang;
   }
 
-  const I18n = {
-    t,
-    error,
-    init,
-    getLang,
-    applyDom,
-    detectLang,
-    MESSAGES
-  };
+  const I18n = { t, error, init, getLang };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = I18n;

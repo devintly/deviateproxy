@@ -36,6 +36,20 @@ assert(domains.includes("example.com"), "plain domain");
 assert(domains.includes("sub.example.org"), "plain host");
 assert(domains.includes("ads.test"), "hosts file");
 
+// Маска пользователя должна доживать до хранилища без правок.
+const masked = api.parseList("*.example.com\nplain.org\n*.wild.net\n");
+assert(masked.includes("*.example.com"), "wildcard kept as typed, got " + masked.join(","));
+assert(masked.includes("*.wild.net"), "second wildcard kept");
+assert(masked.includes("plain.org"), "plain domain kept without mask");
+assert(!masked.includes("example.com"), "wildcard must not be flattened");
+
+// Обе формы одного домена в списке равнозначны, поэтому остаётся одна запись.
+const collapsed = api.parseList("example.com\n*.example.com\n");
+assert(collapsed.length === 1 && collapsed[0] === "*.example.com", "duplicate forms collapse to the mask, got " + collapsed.join(","));
+const collapsedReverse = api.parseList("*.dup.com\ndup.com\n");
+assert(collapsedReverse.length === 1 && collapsedReverse[0] === "*.dup.com", "order must not change the result");
+assert(api.parseList("*.example.com\n*.example.com\n").length === 1, "repeated mask stored once");
+
 const txt = api.ingestRemote("https://x.test/list.txt", "ok.example\n");
 assert(txt.format === "txt", "txt ingest");
 assert(txt.domains.includes("ok.example"), "txt domain");

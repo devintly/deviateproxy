@@ -43,20 +43,59 @@
     return false;
   }
 
+  function getTldData() {
+    if (typeof TldData !== "undefined" && TldData) return TldData;
+    if (root && root.TldData) return root.TldData;
+    if (typeof globalThis !== "undefined" && globalThis.TldData) return globalThis.TldData;
+    return null;
+  }
+
+  function hasValidTld(h) {
+    h = String(h || "").trim().toLowerCase().replace(/^\*\./, "").replace(/\.$/, "");
+    if (!h) return false;
+    if (isIpHost(h)) return true;
+    var parts = h.split(".");
+    if (parts.length < 2) return false;
+    var tld = parts[parts.length - 1];
+    var td = getTldData();
+    if (td && typeof td.hasTld === "function") {
+      return td.hasTld(tld);
+    }
+    return true;
+  }
+
   function isAcceptableHost(h) {
-    h = String(h || "");
+    h = String(h || "").trim();
+    if (h.indexOf("*.") === 0) h = h.slice(2);
     if (!h || /\s/.test(h) || /[^\x00-\x7F]/.test(h)) return false;
     if (isIpHost(h)) return true;
     if (/^\d+(?:\.\d+){3}$/.test(h)) return false;
     if (!/^[a-z0-9.-]+$/i.test(h)) return false;
     if (h.length > 253 || h.indexOf(".") < 0 || h.indexOf("..") >= 0) return false;
-    return h.split(".").every(function (label) {
+    var validLabels = h.split(".").every(function (label) {
       return label.length > 0 && label.length <= 63 &&
         /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label);
     });
+    if (!validLabels) return false;
+    return hasValidTld(h);
   }
 
+  // Нормализация вызывается миллионы раз при пересборке карт и отрисовке
+  // попапа, поэтому результат запоминается до предела NORMALIZE_CACHE_LIMIT.
+  var NORMALIZE_CACHE_LIMIT = 20000;
+  var normalizeCache = new Map();
+
   function normalizeRule(rule) {
+    var raw = typeof rule === "string" ? rule : String(rule || "");
+    var cached = normalizeCache.get(raw);
+    if (cached !== undefined) return cached;
+    var result = computeNormalizedRule(raw);
+    if (normalizeCache.size >= NORMALIZE_CACHE_LIMIT) normalizeCache.clear();
+    normalizeCache.set(raw, result);
+    return result;
+  }
+
+  function computeNormalizedRule(rule) {
     var trimmed = String(rule || "").trim();
     if (!trimmed || /\s/.test(trimmed)) return "";
     var s = trimmed.toLowerCase();
@@ -108,7 +147,9 @@
 
   function addListTargets(list, exact, suffix, ipMap, cidrs) {
     (list.domains || []).forEach(function (d) {
-      d = normalizeRule(d);
+      // Домены списка уникальны и встречаются один раз, поэтому кэш обходится:
+      // иначе сотни тысяч записей вытеснят правила пользователя.
+      d = computeNormalizedRule(d);
       if (!d) return;
       if (d.indexOf("*.") === 0) suffix["." + d.slice(2)] = 1;
       else {
@@ -192,12 +233,80 @@
     return !!(maps.pCidr && maps.pCidr.length);
   }
 
+  // Пересборка карт запускается на любое изменение правил, а домены списков
+  // могут исчисляться сотнями тысяч, поэтому разбор каждого списка кэшируется
+  // до следующего его обновления.
+  var listCompileCache = new Map();
+
+  function listCacheKey(list) {
+    return [
+      list.id,
+      Number(list.updatedAt) || 0,
+      list.format || "txt",
+      (list.domains && list.domains.length) || 0,
+      (list.extra && list.extra.length) || 0,
+      (list.ips && list.ips.length) || 0,
+      (list.cidrs && list.cidrs.length) || 0,
+      list.packed ? 1 : 0
+    ].join("|");
+  }
+
+  function compileList(list, usedKeys) {
+    var key = listCacheKey(list);
+    usedKeys.push(key);
+    var hit = listCompileCache.get(key);
+    if (hit) return hit;
+    var exact = {}, suffix = {}, ip = {}, cidr = [];
+    var pac = null;
+    var targets = list;
+    var PP = getPacParse();
+    if (list.format === "pac" && list.packed && PP) {
+      pac = PP.compilePacList(list);
+      targets = { ips: list.ips, cidrs: list.cidrs, domains: list.extra || [] };
+    }
+    addListTargets(targets, exact, suffix, ip, cidr);
+    var compiled = { pac: pac, exact: exact, suffix: suffix, ip: ip, cidr: cidr };
+    listCompileCache.set(key, compiled);
+    return compiled;
+  }
+
+  // Домены списков занимают много памяти, поэтому устаревшие версии карт
+  // выбрасываются сразу после пересборки.
+  function pruneListCache(usedKeys) {
+    if (listCompileCache.size <= usedKeys.length) return;
+    listCompileCache.forEach(function (value, key) {
+      if (usedKeys.indexOf(key) < 0) listCompileCache.delete(key);
+    });
+  }
+
+  // Подпись входных данных: по ней пересборка понимает, что карты уже готовы,
+  // а Chrome — что PAC-текст можно не собирать заново.
+  function rulesPart(rules) {
+    var arr = rules || [];
+    return arr.length + ":" + arr.join("\n");
+  }
+
+  function mapsSignature(proxyRules, directRules, proxyLists) {
+    var parts = [rulesPart(proxyRules), rulesPart(directRules)];
+    (proxyLists || []).forEach(function (list) {
+      if (!list || list.enabled === false) return;
+      parts.push(listCacheKey(list) + "|" + (list.viaProxy ? list.url || "" : ""));
+    });
+    return parts.join("\n@\n");
+  }
+
+  var lastMaps = null;
+
   function rebuildMaps(proxyRules, directRules, proxyLists) {
+    var signature = mapsSignature(proxyRules, directRules, proxyLists);
+    if (lastMaps && lastMaps.signature === signature) return lastMaps;
+
     var pE = {}, pS = {}, dE = {}, dS = {};
     var pIp = {}, dIp = {}, pCidr = [];
     var pPac = [];
     var compiledLists = [];
     var viaProxyHosts = {};
+    var usedKeys = [];
 
     addHostRules(proxyRules, pE, pS, pIp);
     addHostRules(directRules, dE, dS, dIp);
@@ -210,29 +319,32 @@
           if (u.hostname) viaProxyHosts[u.hostname.toLowerCase()] = 1;
         } catch (e) {}
       }
-      var lExact = {}, lSuffix = {}, lIp = {}, lCidr = [];
-      var lPac = null;
-      var targets = list;
-      var PP = getPacParse();
-      if (list.format === "pac" && list.packed && PP) {
-        lPac = PP.compilePacList(list);
-        pPac.push(lPac);
-        targets = { ips: list.ips, cidrs: list.cidrs, domains: list.extra || [] };
-      }
-      addListTargets(targets, lExact, lSuffix, lIp, lCidr);
-      assignMap(pE, lExact);
-      assignMap(pS, lSuffix);
-      assignMap(pIp, lIp);
-      for (var i = 0; i < lCidr.length; i++) pCidr.push(lCidr[i]);
-      compiledLists.push({ list: list, pac: lPac, exact: lExact, suffix: lSuffix, ip: lIp, cidr: lCidr });
+      var compiled = compileList(list, usedKeys);
+      if (compiled.pac) pPac.push(compiled.pac);
+      assignMap(pE, compiled.exact);
+      assignMap(pS, compiled.suffix);
+      assignMap(pIp, compiled.ip);
+      for (var i = 0; i < compiled.cidr.length; i++) pCidr.push(compiled.cidr[i]);
+      compiledLists.push({
+        list: list,
+        pac: compiled.pac,
+        exact: compiled.exact,
+        suffix: compiled.suffix,
+        ip: compiled.ip,
+        cidr: compiled.cidr
+      });
     });
 
-    return {
+    pruneListCache(usedKeys);
+
+    lastMaps = {
+      signature: signature,
       pE: pE, pS: pS, dE: dE, dS: dS,
       pIp: pIp, dIp: dIp, pCidr: pCidr, pPac: pPac,
       compiledLists: compiledLists,
       viaProxyHosts: viaProxyHosts
     };
+    return lastMaps;
   }
 
   function isDirectHost(host, maps) {
@@ -312,20 +424,46 @@
     return covers;
   }
 
+  function ruleHost(rule) {
+    return String(rule || "").trim().toLowerCase().replace(/^\*\./, "");
+  }
+
+  // Домены сортируются слева направо, IP-адреса идут после них, а для одного
+  // хоста правило с поддоменами стоит перед точным.
+  function compareRules(a, b) {
+    var hostA = ruleHost(a);
+    var hostB = ruleHost(b);
+    var isIpA = isIpHost(hostA);
+    var isIpB = isIpHost(hostB);
+    if (isIpA !== isIpB) return isIpA ? 1 : -1;
+    if (isIpA && isIpB) return hostA.localeCompare(hostB, undefined, { numeric: true });
+    var cmp = hostA.localeCompare(hostB);
+    if (cmp !== 0) return cmp;
+    var wildA = String(a).indexOf("*.") === 0;
+    var wildB = String(b).indexOf("*.") === 0;
+    if (wildA !== wildB) return wildA ? -1 : 1;
+    return String(a).localeCompare(String(b));
+  }
+
+  function sortRules(rules) {
+    return (rules || []).slice().sort(compareRules);
+  }
+
+  // Точное правило не нужно, если тот же хост уже покрыт правилом с поддоменами.
+  function pruneRedundant(rules) {
+    var wildHosts = {};
+    (rules || []).forEach(function (r) {
+      if (String(r).indexOf("*.") === 0) wildHosts[ruleHost(r)] = 1;
+    });
+    return sortRules((rules || []).filter(function (r) {
+      return String(r).indexOf("*.") === 0 || !wildHosts[ruleHost(r)];
+    }));
+  }
+
   function isOwnPage(url, base) {
     var s = String(url || "");
     if (!s) return false;
     return !!(base && s.indexOf(base) === 0);
-  }
-
-  function isWebTab(tab, base) {
-    if (!tab || isOwnPage(tab.url, base)) return false;
-    try {
-      var p = new URL(tab.url).protocol;
-      return p === "http:" || p === "https:";
-    } catch (e) {
-      return false;
-    }
   }
 
   function rememberHost(bucket, tabId, host, limit) {
@@ -413,9 +551,14 @@
     TAB_HOST_LIMIT: TAB_HOST_LIMIT,
     isIpHost: isIpHost,
     isIgnoredHost: isIgnoredHost,
+    hasValidTld: hasValidTld,
     isAcceptableHost: isAcceptableHost,
     normalizeRule: normalizeRule,
     canonHost: canonHost,
+    ruleHost: ruleHost,
+    compareRules: compareRules,
+    sortRules: sortRules,
+    pruneRedundant: pruneRedundant,
     addHostRules: addHostRules,
     addListTargets: addListTargets,
     matchMaps: matchMaps,
@@ -432,7 +575,6 @@
     coverPayload: coverPayload,
     coverMany: coverMany,
     isOwnPage: isOwnPage,
-    isWebTab: isWebTab,
     rememberHost: rememberHost,
     buildDomainTree: buildDomainTree
   };

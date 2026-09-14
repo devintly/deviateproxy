@@ -25,8 +25,4 @@ assert(!api.isOwnPage("moz-extension://other-ext/popup.html", self), "other exte
 assert(!api.isOwnPage("", self), "empty");
 assert(api.isOwnPage("moz-extension://abc-123/popup.html#foo", self), "settings hash");
 
-assert(!api.isWebTab({ url: "moz-extension://abc-123/list.html" }, self), "own page is not a web tab");
-assert(api.isWebTab({ url: "https://rutor.info/" }, self), "web tab kept");
-assert(!api.isWebTab({ url: "about:blank" }, self), "about blank");
-
 console.log("test-own-pages: ok");

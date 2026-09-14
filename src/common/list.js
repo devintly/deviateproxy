@@ -5,83 +5,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveBtn = document.getElementById("saveBtn");
   const status = document.getElementById("status");
 
-  function ruleHost(rule) {
-    return String(rule || "").trim().toLowerCase().replace(/^\*\./, "");
-  }
-
-  function parseRules(text) {
-    const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
-    const parsedLines = [];
-    const invalid = [];
-
-    lines.forEach((line, index) => {
-      const lineNum = index + 1;
-      const raw = line.trim();
-      if (!raw) {
-        parsedLines.push({ lineNum, raw: "", normalized: "", host: "" });
-        return;
-      }
-      const normalized = HostRules.normalizeRule(raw);
-      if (!normalized) {
-        invalid.push(lineNum);
-        parsedLines.push({ lineNum, raw, normalized: "", host: "" });
-      } else {
-        const host = ruleHost(normalized);
-        parsedLines.push({ lineNum, raw, normalized, host });
-      }
-    });
-
-    const uniqueRules = [];
-    parsedLines.forEach(item => {
-      if (item.normalized && !uniqueRules.includes(item.normalized)) {
-        uniqueRules.push(item.normalized);
-      }
-    });
-
-    return { lines: parsedLines, rules: uniqueRules, invalid };
-  }
-
-  function compareRules(a, b) {
-    const hostA = ruleHost(a);
-    const hostB = ruleHost(b);
-    const isIpA = HostRules.isIpHost ? HostRules.isIpHost(hostA) : /^\d+\.\d+\.\d+\.\d+$/.test(hostA);
-    const isIpB = HostRules.isIpHost ? HostRules.isIpHost(hostB) : /^\d+\.\d+\.\d+\.\d+$/.test(hostB);
-
-    // Group IPs after domain names
-    if (isIpA !== isIpB) return isIpA ? 1 : -1;
-    if (isIpA && isIpB) {
-      return hostA.localeCompare(hostB, undefined, { numeric: true });
-    }
-
-    // Sort domain names directly left-to-right
-    const cmp = hostA.localeCompare(hostB);
-    if (cmp !== 0) return cmp;
-
-    // If same host, wildcard comes first (*.example.com before example.com)
-    const wildA = a.startsWith("*.");
-    const wildB = b.startsWith("*.");
-    if (wildA !== wildB) return wildA ? -1 : 1;
-
-    return a.localeCompare(b);
-  }
-
-  function sortRules(rules) {
-    return rules.slice().sort(compareRules);
-  }
-
-  function pruneRedundantWithinList(rules) {
-    const wildHosts = new Set();
-    rules.forEach(r => {
-      if (r.startsWith("*.")) wildHosts.add(ruleHost(r));
-    });
-    const filtered = rules.filter(r => {
-      if (!r.startsWith("*.") && wildHosts.has(ruleHost(r))) {
-        return false;
-      }
-      return true;
-    });
-    return sortRules(filtered);
-  }
+  const pruneRedundant = HostRules.pruneRedundant;
 
   function findCrossConflicts(directParsed, proxyParsed) {
     const directHostMap = new Map();
@@ -119,77 +43,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     setTimeout(() => { if (status.textContent === text) status.textContent = ""; }, 3000);
   }
 
-  function createEditor(textareaId, gutterId, backdropId, containerId) {
-    const textarea = document.getElementById(textareaId);
-    const gutter = document.getElementById(gutterId);
-    const backdrop = document.getElementById(backdropId);
-    const container = document.getElementById(containerId);
-    let invalidSet = new Set();
-    let rafId = null;
-
-    function renderLines() {
-      const lines = textarea.value.replace(/\r\n/g, "\n").split("\n");
-      const count = Math.max(lines.length, 1);
-      const gutterFrag = document.createDocumentFragment();
-      const backdropFrag = document.createDocumentFragment();
-
-      for (let i = 0; i < count; i++) {
-        const lineNum = i + 1;
-        const isInvalid = invalidSet.has(lineNum);
-        
-        const gDiv = document.createElement("div");
-        gDiv.className = `gutter-line${isInvalid ? " invalid" : ""}`;
-        gDiv.textContent = String(lineNum);
-        gutterFrag.appendChild(gDiv);
-
-        const bDiv = document.createElement("div");
-        bDiv.className = `hl-line${isInvalid ? " invalid" : ""}`;
-        backdropFrag.appendChild(bDiv);
-      }
-
-      gutter.textContent = "";
-      gutter.appendChild(gutterFrag);
-      backdrop.textContent = "";
-      backdrop.appendChild(backdropFrag);
-      container.classList.toggle("has-error", invalidSet.size > 0);
-      syncScroll();
-    }
-
-    function syncScroll() {
-      backdrop.scrollTop = textarea.scrollTop;
-      backdrop.scrollLeft = textarea.scrollLeft;
-      gutter.scrollTop = textarea.scrollTop;
-    }
-
-    function setHighlightedLines(lineNumbers) {
-      invalidSet = new Set(lineNumbers);
-      renderLines();
-    }
-
-    function parse() {
-      return parseRules(textarea.value);
-    }
-
-    textarea.addEventListener("input", () => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        validateAll();
-      });
+  function createEditor(prefix) {
+    return RuleEditor.create({
+      textarea: document.getElementById(`${prefix}Editor`),
+      gutter: document.getElementById(`${prefix}Gutter`),
+      backdrop: document.getElementById(`${prefix}Backdrop`),
+      container: document.getElementById(`${prefix}Container`),
+      onChange: () => validateAll()
     });
-
-    textarea.addEventListener("scroll", syncScroll, { passive: true });
-
-    return {
-      textarea,
-      parse,
-      renderLines,
-      setHighlightedLines,
-      syncScroll
-    };
   }
 
-  const proxyEditor = createEditor("proxyEditor", "proxyGutter", "proxyBackdrop", "proxyContainer");
-  const directEditor = createEditor("directEditor", "directGutter", "directBackdrop", "directContainer");
+  const proxyEditor = createEditor("proxy");
+  const directEditor = createEditor("direct");
 
   function validateAll() {
     const directParsed = directEditor.parse();
@@ -199,8 +64,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const directErrors = new Set([...directParsed.invalid, ...directConflicts]);
     const proxyErrors = new Set([...proxyParsed.invalid, ...proxyConflicts]);
 
-    directEditor.setHighlightedLines(directErrors);
-    proxyEditor.setHighlightedLines(proxyErrors);
+    directEditor.setInvalidLines(directErrors);
+    proxyEditor.setInvalidLines(proxyErrors);
 
     return {
       directParsed,
@@ -213,83 +78,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   const res = await browser.storage.local.get(["proxyRules", "directRules"]);
-  const initialDirect = pruneRedundantWithinList(Array.isArray(res.directRules) ? res.directRules : []);
-  const initialProxy = pruneRedundantWithinList(Array.isArray(res.proxyRules) ? res.proxyRules : []);
-
-  proxyEditor.textarea.value = initialProxy.join("\n");
-  directEditor.textarea.value = initialDirect.join("\n");
+  proxyEditor.setValue(pruneRedundant(Array.isArray(res.proxyRules) ? res.proxyRules : []).join("\n"));
+  directEditor.setValue(pruneRedundant(Array.isArray(res.directRules) ? res.directRules : []).join("\n"));
   validateAll();
 
   function appendEditorText(editor, text) {
-    const currentVal = editor.textarea.value.trim();
-    const incomingVal = String(text || "").trim();
-    if (!incomingVal) return;
-
-    editor.textarea.value = currentVal ? `${currentVal}\n${incomingVal}` : incomingVal;
+    if (!editor.appendText(text)) return;
     validateAll();
     editor.textarea.focus();
     editor.syncScroll();
   }
 
-  function setupImportFile(btnId, fileInputId, editor) {
-    const btn = document.getElementById(btnId);
-    const fileInput = document.getElementById(fileInputId);
-    if (!btn || !fileInput) return;
-
-    btn.addEventListener("click", () => {
-      fileInput.value = "";
-      fileInput.click();
-    });
-
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files && fileInput.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        appendEditorText(editor, e.target && e.target.result);
-      };
-      reader.readAsText(file);
-    });
+  function setupImport(prefix, editor) {
+    const onText = text => appendEditorText(editor, text);
+    FileImport.attachPicker(
+      document.getElementById(`import${prefix}Btn`),
+      document.getElementById(`import${prefix}File`),
+      onText
+    );
+    FileImport.attachDropZone(document.getElementById(`${prefix.toLowerCase()}Container`), onText);
   }
 
-  function setupDropZone(containerId, editor) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    ["dragenter", "dragover"].forEach(evt => {
-      container.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        container.classList.add("drag-over");
-      });
-    });
-
-    ["dragleave", "drop"].forEach(evt => {
-      container.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        container.classList.remove("drag-over");
-      });
-    });
-
-    container.addEventListener("drop", (e) => {
-      const dt = e.dataTransfer;
-      if (dt && dt.files && dt.files.length) {
-        const file = dt.files[0];
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          appendEditorText(editor, ev.target && ev.target.result);
-        };
-        reader.readAsText(file);
-      }
-    });
-  }
-
-  setupImportFile("importProxyBtn", "importProxyFile", proxyEditor);
-  setupImportFile("importDirectBtn", "importDirectFile", directEditor);
-  setupDropZone("proxyContainer", proxyEditor);
-  setupDropZone("directContainer", directEditor);
+  setupImport("Proxy", proxyEditor);
+  setupImport("Direct", directEditor);
 
   window.addEventListener("resize", () => {
     proxyEditor.syncScroll();
@@ -308,14 +119,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    const nextDirect = pruneRedundantWithinList(validation.directParsed.rules);
-    const nextProxy = pruneRedundantWithinList(validation.proxyParsed.rules);
+    const nextDirect = pruneRedundant(validation.directParsed.rules);
+    const nextProxy = pruneRedundant(validation.proxyParsed.rules);
 
     await browser.storage.local.set({ proxyRules: nextProxy, directRules: nextDirect });
-    proxyEditor.textarea.value = nextProxy.join("\n");
-    directEditor.textarea.value = nextDirect.join("\n");
+    proxyEditor.setValue(nextProxy.join("\n"));
+    directEditor.setValue(nextDirect.join("\n"));
     validateAll();
-    flash(typeof I18n !== "undefined" ? I18n.t("list_editor_saved") : "Сохранено");
+    flash(I18n.t("msg_saved"));
   });
 
   window.addEventListener("keydown", (e) => {

@@ -16,6 +16,7 @@ const sandbox = { console, module: { exports: {} }, self: {}, URL, Set };
 sandbox.exports = sandbox.module.exports;
 vm.createContext(sandbox);
 load("pac-parse.js", sandbox);
+load("tlds.js", sandbox);
 load("host-rules.js", sandbox);
 const api = sandbox.HostRules || sandbox.self.HostRules || sandbox.module.exports;
 

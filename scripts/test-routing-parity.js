@@ -9,7 +9,7 @@ const common = path.join(__dirname, "..", "src", "common");
 const sandbox = { module: { exports: {} }, self: {}, URL, Set };
 sandbox.exports = sandbox.module.exports;
 vm.createContext(sandbox);
-for (const file of ["pac-parse.js", "host-rules.js", "generate-pac.js"]) {
+for (const file of ["pac-parse.js", "tlds.js", "host-rules.js", "generate-pac.js"]) {
   vm.runInContext(fs.readFileSync(path.join(common, file), "utf8"), sandbox, { filename: file });
 }
 

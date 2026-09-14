@@ -7,103 +7,50 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropzone = document.getElementById("dropzone");
   const statusEl = document.getElementById("status");
 
-  function processFile(file) {
-    if (!file) return;
+  function setStatus(kind, text) {
+    if (!statusEl) return;
+    statusEl.className = `status ${kind}`;
+    statusEl.textContent = text;
+  }
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const text = e.target && e.target.result ? String(e.target.result).trim() : "";
-      if (!text) {
-        if (statusEl) {
-          statusEl.className = "status error";
-          statusEl.textContent = I18n.t("error_parse");
-        }
-        return;
-      }
-
-      try {
-        const res = await browser.storage.local.get(["popupUiDraft"]);
-        const draft = res.popupUiDraft || {
-          activeTabId: "tabLists",
-          listForm: {
-            editingListId: null,
-            name: "",
-            url: "",
-            interval: "12",
-            viaProxy: false,
-            manualDomains: [],
-            domainsModalOpen: true,
-            domainsModalInput: ""
-          }
-        };
-
-        if (!draft.listForm) {
-          draft.listForm = {
-            editingListId: null,
-            name: "",
-            url: "",
-            interval: "12",
-            viaProxy: false,
-            manualDomains: [],
-            domainsModalOpen: true,
-            domainsModalInput: ""
-          };
-        }
-
-        const existingInput = String(draft.listForm.domainsModalInput || "").trim();
-        draft.listForm.domainsModalInput = existingInput ? (existingInput + "\n" + text) : text;
-        draft.listForm.domainsModalOpen = true;
-        draft.activeTabId = "tabLists";
-
-        await browser.storage.local.set({ popupUiDraft: draft });
-
-        if (statusEl) {
-          statusEl.className = "status success";
-          statusEl.textContent = I18n.t("import_success");
-        }
-
-        setTimeout(() => {
-          try { window.close(); } catch (_) {}
-        }, 1200);
-      } catch (err) {
-        if (statusEl) {
-          statusEl.className = "status error";
-          statusEl.textContent = String((err && err.message) || err);
-        }
-      }
+  function emptyListForm() {
+    return {
+      editingListId: null,
+      name: "",
+      url: "",
+      interval: "12",
+      viaProxy: false,
+      manualDomains: [],
+      domainsModalOpen: true,
+      domainsModalInput: ""
     };
-    reader.readAsText(file);
   }
 
-  if (fileInput) {
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files && fileInput.files[0];
-      processFile(file);
-    });
+  async function processText(raw) {
+    const text = String(raw || "").trim();
+    if (!text) {
+      setStatus("error", I18n.t("error_parse"));
+      return;
+    }
+    try {
+      const res = await browser.storage.local.get(["popupUiDraft"]);
+      const draft = res.popupUiDraft || {};
+      if (!draft.listForm) draft.listForm = emptyListForm();
+      const existingInput = String(draft.listForm.domainsModalInput || "").trim();
+      draft.listForm.domainsModalInput = existingInput ? `${existingInput}\n${text}` : text;
+      draft.listForm.domainsModalOpen = true;
+      draft.activeTabId = "tabLists";
+
+      await browser.storage.local.set({ popupUiDraft: draft });
+      setStatus("success", I18n.t("import_success"));
+      setTimeout(() => {
+        try { window.close(); } catch (_) {}
+      }, 1200);
+    } catch (err) {
+      setStatus("error", String((err && err.message) || err));
+    }
   }
 
-  if (dropzone) {
-    ["dragenter", "dragover"].forEach(evt => {
-      dropzone.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.add("drag-over");
-      });
-    });
-
-    ["dragleave", "drop"].forEach(evt => {
-      dropzone.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.remove("drag-over");
-      });
-    });
-
-    dropzone.addEventListener("drop", (e) => {
-      const dt = e.dataTransfer;
-      if (dt && dt.files && dt.files.length) {
-        processFile(dt.files[0]);
-      }
-    });
-  }
+  FileImport.attachFileInput(fileInput, processText);
+  FileImport.attachDropZone(dropzone, processText);
 });
