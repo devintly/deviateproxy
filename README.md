@@ -41,5 +41,9 @@ powershell -ExecutionPolicy Bypass -File scripts/package.ps1
 
 ---
 
-Исходный код: [GitHub](https://github.com/devintly/deviateproxy)  
-Вдохновлено MeguProxy: [GitHub](https://github.com/ventordimi/meguproxy)
+**Исходный код:**
+[GitHub](https://github.com/devintly/deviateproxy)
+
+**Вдохновлено:**
+- [MeguProxy](https://github.com/ventordimi/meguproxy)
+- [PAC Proxy Manager Extension](https://github.com/ilyachase/pac-proxy-manager-extension)
