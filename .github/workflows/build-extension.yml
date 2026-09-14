@@ -88,10 +88,9 @@ jobs:
             echo "В dist нет zip/xpi"
             exit 1
           fi
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "${files[@]}" --clobber
-          else
-            gh release create "$tag" "${files[@]}" \
-              --title "v${ver}" \
-              --generate-notes
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "v${ver}" --generate-notes --verify-tag
           fi
+          gh release edit "$tag" --draft=false --latest
+          gh release upload "$tag" "${files[@]}" --clobber
+          gh release view "$tag" --json url,tagName,isDraft,isPrerelease
