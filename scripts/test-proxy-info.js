@@ -98,4 +98,11 @@ assert(!proxyApi.isProxyControlBlocked("controlled_by_this_extension"), "own PAC
 assert(!proxyApi.isProxyControlBlocked("controllable_by_this_extension"), "free slot is not a conflict");
 assert(!proxyApi.isProxyControlBlocked(""), "empty control level is not a conflict");
 
+assert(Array.isArray(proxyApi.HOST_ORIGINS) && proxyApi.HOST_ORIGINS.length === 4, "HOST_ORIGINS has four web schemes");
+assert(proxyApi.hostOriginsGranted(["<all_urls>"]), "<all_urls> covers required hosts");
+assert(proxyApi.hostOriginsGranted(["*://*/*"]), "*://*/* covers required hosts");
+assert(proxyApi.hostOriginsGranted(proxyApi.HOST_ORIGINS), "exact HOST_ORIGINS is granted");
+assert(!proxyApi.hostOriginsGranted(["https://*/*"]), "https alone is not enough");
+assert(!proxyApi.hostOriginsGranted([]), "empty origins are not granted");
+
 console.log("test-proxy-info: ok");

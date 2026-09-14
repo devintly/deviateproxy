@@ -116,6 +116,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     importSettingsFile: document.getElementById("importSettingsFile"),
     conflictBanner: document.getElementById("conflictBanner"),
     conflictRefresh: document.getElementById("conflictRefreshBtn"),
+    hostAccessBanner: document.getElementById("hostAccessBanner"),
+    hostAccessGrant: document.getElementById("hostAccessGrantBtn"),
     toastContainer: document.getElementById("toastContainer")
   };
 
@@ -137,6 +139,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   let currentManualDomains = [];
   let extensionEnabled = false;
   let isConflictBlocked = false;
+  let hostAccessGranted = true;
 
   function activateTab(index, focus) {
     tabs.forEach((tab, i) => {
@@ -1146,7 +1149,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.powerBtn.classList.toggle("off", !on);
     const label = isConflictBlocked
       ? I18n.t("conflict_warning_title")
-      : (!hasConfiguredProxy() ? I18n.t("power_setup") : (on ? I18n.t("power_off") : I18n.t("power_on")));
+      : (!hostAccessGranted ? I18n.t("host_access_title")
+      : (!hasConfiguredProxy() ? I18n.t("power_setup") : (on ? I18n.t("power_off") : I18n.t("power_on"))));
     els.powerBtn.title = label;
     els.powerBtn.setAttribute("aria-label", label);
     els.powerBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -1753,8 +1757,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
+    await syncHostAccessBanner();
     await checkProxyConflict();
     if (res.proxyApplyError || res.proxyApplyErrorCode) flashError(res.proxyApplyError, res.proxyApplyErrorCode);
+  }
+
+  async function syncHostAccessBanner() {
+    try {
+      hostAccessGranted = await ProxyConfig.hasHostPermissions(browser);
+    } catch (_) {
+      hostAccessGranted = true;
+    }
+    if (els.hostAccessBanner) {
+      els.hostAccessBanner.style.display = hostAccessGranted ? "none" : "flex";
+    }
+    refreshPowerBtn();
   }
 
   async function checkProxyConflict() {
@@ -2249,7 +2266,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.conflictRefresh.addEventListener("click", () => refreshConflictStatus());
   }
 
+  if (els.hostAccessGrant) {
+    els.hostAccessGrant.addEventListener("click", async () => {
+      const granted = await ProxyConfig.requestHostPermissions(browser);
+      await syncHostAccessBanner();
+      if (!granted) flash(I18n.t("msg_host_access_denied"), "#ff6b6b");
+    });
+  }
+
+  if (browser.permissions) {
+    const onHostPermChange = () => { syncHostAccessBanner(); };
+    try {
+      if (browser.permissions.onAdded) browser.permissions.onAdded.addListener(onHostPermChange);
+      if (browser.permissions.onRemoved) browser.permissions.onRemoved.addListener(onHostPermChange);
+    } catch (_) {}
+  }
+
   els.powerBtn.addEventListener("click", async () => {
+    if (!extensionEnabled) {
+      const granted = await ProxyConfig.requestHostPermissions(browser);
+      await syncHostAccessBanner();
+      if (!granted) {
+        flash(I18n.t("msg_host_access_denied"), "#ff6b6b");
+        return;
+      }
+    }
     if (isConflictBlocked) {
       showToast(I18n.t("conflict_warning_desc"), "error");
       return;

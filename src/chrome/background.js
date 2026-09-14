@@ -362,7 +362,7 @@ chrome.webRequest.onBeforeRequest.addListener(
     if (initialized) record();
     else ensureInit().then(record).catch(() => {});
   },
-  { urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }
+  { urls: ProxyConfig.HOST_ORIGINS.slice() }
 );
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {

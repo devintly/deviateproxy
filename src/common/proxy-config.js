@@ -163,6 +163,51 @@
     return level === "controlled_by_other_extensions" || level === "not_controllable";
   }
 
+  // Совпадает с host_permissions в манифестах: маршрутизация, auth и списки
+  // работают только если эти origin выданы. В Firefox MV3 они всё равно
+  // снимаемые, поэтому отсутствие проверяем через permissions API.
+  var HOST_ORIGINS = Object.freeze(["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"]);
+
+  function hostPermissionQuery() {
+    return { origins: HOST_ORIGINS.slice() };
+  }
+
+  function hostOriginsGranted(granted) {
+    var list = granted || [];
+    if (list.indexOf("<all_urls>") >= 0 || list.indexOf("*://*/*") >= 0) return true;
+    return HOST_ORIGINS.every(function (need) {
+      return list.indexOf(need) >= 0;
+    });
+  }
+
+  async function hasHostPermissions(api) {
+    if (!api || !api.permissions) return true;
+    var contained = null;
+    try {
+      if (typeof api.permissions.contains === "function") {
+        contained = await api.permissions.contains(hostPermissionQuery());
+        if (contained) return true;
+      }
+    } catch (_) {}
+    if (typeof api.permissions.getAll === "function") {
+      try {
+        var all = await api.permissions.getAll();
+        return hostOriginsGranted(all && all.origins);
+      } catch (_) {}
+    }
+    return contained !== false;
+  }
+
+  async function requestHostPermissions(api) {
+    if (!api || !api.permissions || typeof api.permissions.request !== "function") return true;
+    try {
+      // request() должен быть первым await: иначе браузер теряет user gesture.
+      return !!(await api.permissions.request(hostPermissionQuery()));
+    } catch (_) {
+      return false;
+    }
+  }
+
   var api = {
     emptyConfig: emptyConfig,
     configFromServers: configFromServers,
@@ -178,7 +223,12 @@
     iconPaths: iconPaths,
     toolbarIconOn: toolbarIconOn,
     badgeText: badgeText,
-    isProxyControlBlocked: isProxyControlBlocked
+    isProxyControlBlocked: isProxyControlBlocked,
+    HOST_ORIGINS: HOST_ORIGINS,
+    hostPermissionQuery: hostPermissionQuery,
+    hostOriginsGranted: hostOriginsGranted,
+    hasHostPermissions: hasHostPermissions,
+    requestHostPermissions: requestHostPermissions
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;

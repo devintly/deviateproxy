@@ -47,11 +47,22 @@ assert(!/changes\.proxyLists/.test(chrome) && !/changes\.proxyLists/.test(firefo
 assert(/withProxyLock\(/.test(chrome) && /async function withFetchRoute[\s\S]*?withProxyLock\(/.test(chrome), "Chrome must hold the proxy lock while a list downloads");
 
 const chromeManifest = JSON.parse(read("src/chrome/manifest.json"));
+const firefoxManifest = JSON.parse(read("src/firefox/manifest.json"));
+const requiredHosts = ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"];
+function assertRequiredHosts(manifest, name) {
+  assert(!manifest.optional_permissions, `${name} must not declare optional API permissions`);
+  assert(!manifest.optional_host_permissions, `${name} host access must stay required in host_permissions`);
+  requiredHosts.forEach(origin => {
+    assert((manifest.host_permissions || []).includes(origin), `${name} host_permissions missing ${origin}`);
+  });
+  assert((manifest.host_permissions || []).length === requiredHosts.length, `${name} host_permissions must match required hosts`);
+}
 assert(chromeManifest.permissions.includes("offscreen"), "Chrome offscreen permission missing");
+assertRequiredHosts(chromeManifest, "Chrome");
+assertRequiredHosts(firefoxManifest, "Firefox");
 assert(fs.existsSync(path.join(root, "src/chrome/offscreen.html")), "offscreen document missing");
 
 // Фоновые скрипты Firefox подключаются вручную: общие модули должны быть в списке.
-const firefoxManifest = JSON.parse(read("src/firefox/manifest.json"));
 ["list-store.js", "tab-tracker.js"].forEach(file => {
   assert(firefoxManifest.background.scripts.includes(file), `firefox manifest must load ${file}`);
 });

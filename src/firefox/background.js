@@ -1,4 +1,4 @@
-const ALL_WEB_URLS = ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"];
+const ALL_WEB_URLS = ProxyConfig.HOST_ORIGINS.slice();
 const PROBE_HOST = "cp.cloudflare.com";
 // Проверка «свои страницы» идёт на каждый запрос, поэтому база берётся один раз.
 const OWN_PAGE_BASE = browser.runtime.getURL("");

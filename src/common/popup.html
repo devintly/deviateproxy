@@ -33,6 +33,12 @@
     .conflict-refresh svg { width: 16px; height: 16px; display: block; }
     .conflict-refresh.busy svg { animation: list-spin 0.8s linear infinite; }
     .conflict-refresh:disabled { opacity: 0.6; cursor: default; }
+    .host-access-banner { background: rgba(1, 125, 241, 0.16); border-color: rgba(1, 125, 241, 0.4); }
+    .host-access-banner .conflict-icon { color: #6cb6ff; }
+    .host-access-banner .conflict-title { color: #6cb6ff; }
+    .host-access-grant { flex: none; border: 0; border-radius: 8px; background: #017df1; color: #fff; font-size: 11px; font-weight: 600; padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+    .host-access-grant:hover { background: #3d9dff; }
+    .host-access-grant:disabled { opacity: 0.6; cursor: default; }
     .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-shrink: 0; align-items: stretch; }
     .tab { flex: 1; border: 0; border-radius: 10px; background: #2b2d31; color: #b5bac1; padding: 8px 0; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: 0.15s; display: flex; align-items: center; justify-content: center; }
     .tab.active { background: #017df1; color: #ffffff; }
@@ -689,6 +695,17 @@
       <button id="infoBtn" class="info-btn" type="button" data-i18n-title="info_title" data-i18n-aria-label="info_title" title="О расширении" aria-label="О расширении">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.01"/></svg>
       </button>
+    </div>
+
+    <div id="hostAccessBanner" class="conflict-banner host-access-banner" style="display: none;">
+      <div class="conflict-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16v.01"/></svg>
+      </div>
+      <div class="conflict-text">
+        <div class="conflict-title" data-i18n="host_access_title">Нужен доступ к сайтам</div>
+        <div class="conflict-desc" data-i18n="host_access_desc">Без доступа ко всем сайтам прокси, авторизация и загрузка списков не работают.</div>
+      </div>
+      <button id="hostAccessGrantBtn" class="host-access-grant" type="button" data-i18n="btn_grant_access">Разрешить</button>
     </div>
 
     <div id="conflictBanner" class="conflict-banner" style="display: none;">
