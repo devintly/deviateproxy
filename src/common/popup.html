@@ -11,6 +11,7 @@
   <script src="list-update.js"></script>
   <script src="rule-editor.js"></script>
   <script src="file-import.js"></script>
+  <script src="settings-io.js"></script>
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; width: 440px; height: 450px; overflow: hidden; background: #1e1f22; color: #f2f3f5; font-family: Tahoma, Arial, sans-serif; }
@@ -92,11 +93,19 @@
     .info-close-btn { width: 28px; height: 28px; min-width: 28px; min-height: 28px; padding: 0; background: transparent; color: #949ba4; border: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
     .info-close-btn:hover { background: #35373c; color: #f2f3f5; }
     .info-close-btn svg { width: 16px; height: 16px; display: block; }
-    .info-desc { font-size: 12px; color: #b5bac1; line-height: 1.5; margin: 0 0 14px; }
+    .info-desc { font-size: 12px; color: #b5bac1; line-height: 1.5; margin: 0 0 12px; }
+    .info-settings { display: flex; gap: 8px; margin: 0 0 14px; }
+    .info-settings button { flex: 1; min-width: 0; min-height: 36px; background: #1e1f22; color: #f2f3f5; font-size: 11px; font-weight: 600; gap: 6px; padding: 8px 8px; }
+    .info-settings button:hover { background: #35373c; }
+    .info-settings button svg { width: 14px; height: 14px; display: block; flex-shrink: 0; }
+    .info-section { margin: 0 0 12px; }
+    .info-section:last-child { margin-bottom: 0; }
+    .info-section-label { font-size: 11px; text-transform: uppercase; color: #b5bac1; font-weight: 700; margin: 0 0 6px; }
     .info-links { display: flex; flex-direction: column; gap: 8px; margin-bottom: 0; }
-    .info-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #1e1f22; border-radius: 10px; color: #00a8fc; text-decoration: none; font-size: 12px; font-weight: 600; transition: background 0.15s, color 0.15s; }
+    .info-link { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #1e1f22; border-radius: 10px; color: #00a8fc; text-decoration: none; font-size: 12px; font-weight: 600; transition: background 0.15s, color 0.15s; line-height: 1.3; }
     .info-link:hover { background: #35373c; color: #fff; }
     .info-link svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .info-link span { min-width: 0; }
     .toast-container { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 100; pointer-events: none; width: 0; height: 0; }
     .toast { position: absolute; bottom: 0; left: 50%; transform: translate(-50%, 10px); pointer-events: auto; padding: 8px 16px; border-radius: 10px; font-size: 12px; font-weight: 600; line-height: 1.4; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.25s ease, transform 0.25s ease; word-break: break-word; max-width: 380px; width: max-content; box-sizing: border-box; }
     .toast.toast-in { opacity: 1; transform: translate(-50%, 0); }
@@ -609,6 +618,7 @@
     html.android .power-btn svg,
     html.android .info-btn svg,
     html.android .conflict-refresh svg { width: 20px; height: 20px; }
+    html.android .info-settings button { min-height: 40px; font-size: 12px; }
     html.android .list-card-actions button,
     html.android .list-card-side button {
       width: 40px;
@@ -798,7 +808,7 @@
           <input id="listName" type="text" data-i18n-placeholder="lbl_name" placeholder="Название" autocomplete="off" spellcheck="false">
           <div class="label" id="listUrlLabel"><span data-i18n="lbl_url">URL списка (TXT / PAC)</span><span class="req" aria-hidden="true">*</span></div>
           <div class="row" style="align-items: center; gap: 8px; margin-bottom: 12px;">
-            <input id="listUrl" type="text" style="margin-bottom: 0;" data-i18n-placeholder="placeholder_list_url" placeholder="https://.../filter.txt или https://.../proxy.pac">
+            <input id="listUrl" type="text" style="margin-bottom: 0;" data-i18n-placeholder="placeholder_list_url" placeholder="https://.../list.txt">
             <button id="openListDomainsBtn" class="icon-btn" type="button" data-i18n-title="btn_manual_domains" title="Ввести домены вручную" aria-label="Ввести домены вручную">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
@@ -833,15 +843,38 @@
         </button>
       </div>
       <div class="info-desc" data-i18n="info_desc">Проксирование сайтов через SOCKS/HTTP/HTTPS по пользовательским правилам с поддержкой импорта TXT/PAC списков.</div>
-      <div class="info-links">
-        <a class="info-link" href="https://github.com/devintly/deviateproxy" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
-          <span data-i18n="info_source_link">Исходный код (GitHub)</span>
-        </a>
-        <a class="info-link" href="https://github.com/ventordimi/meguproxy" target="_blank" rel="noopener noreferrer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          <span data-i18n="info_inspired_link">Вдохновлено MeguProxy</span>
-        </a>
+      <div class="info-settings">
+        <button id="importSettingsBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="btn_import_settings">Импорт настроек</span>
+        </button>
+        <button id="exportSettingsBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span data-i18n="btn_export_settings">Экспорт настроек</span>
+        </button>
+      </div>
+      <input id="importSettingsFile" type="file" accept=".json,application/json" style="display:none;">
+      <div class="info-section">
+        <div class="info-section-label" data-i18n="info_source">Исходный код:</div>
+        <div class="info-links">
+          <a class="info-link" href="https://github.com/devintly/deviateproxy" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            <span data-i18n="info_github">DeviateProxy</span>
+          </a>
+        </div>
+      </div>
+      <div class="info-section">
+        <div class="info-section-label" data-i18n="info_inspired">Вдохновлено:</div>
+        <div class="info-links">
+          <a class="info-link" href="https://github.com/ventordimi/meguproxy" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            <span data-i18n="info_inspired_megu">MeguProxy</span>
+          </a>
+          <a class="info-link" href="https://github.com/ilyachase/pac-proxy-manager-extension" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+            <span data-i18n="info_inspired_pac">PAC Proxy Manager Extension</span>
+          </a>
+        </div>
       </div>
     </div>
   </div>

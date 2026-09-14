@@ -3,7 +3,7 @@ const browser = globalThis.browser || globalThis.chrome;
 document.addEventListener("DOMContentLoaded", async () => {
   if (typeof I18n !== "undefined") await I18n.init(browser);
   const saveBtn = document.getElementById("saveBtn");
-  const status = document.getElementById("status");
+  const toastContainer = document.getElementById("toastContainer");
 
   const pruneRedundant = HostRules.pruneRedundant;
 
@@ -37,10 +37,39 @@ document.addEventListener("DOMContentLoaded", async () => {
     return { directConflicts, proxyConflicts };
   }
 
+  let activeToast = null;
+  let toastHideTimer = null;
+
+  function dismissToast(el) {
+    if (!el) return;
+    el.classList.remove("toast-in");
+    el.classList.add("toast-out");
+    setTimeout(() => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 250);
+  }
+
   function flash(text, error) {
-    status.style.color = error ? "#ff6b6b" : "#57f287";
-    status.textContent = text;
-    setTimeout(() => { if (status.textContent === text) status.textContent = ""; }, 3000);
+    if (!text || !toastContainer) return;
+    if (toastHideTimer) {
+      clearTimeout(toastHideTimer);
+      toastHideTimer = null;
+    }
+    if (activeToast) {
+      dismissToast(activeToast);
+      activeToast = null;
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${error ? "error" : "success"}`;
+    toast.textContent = text;
+    toastContainer.appendChild(toast);
+    activeToast = toast;
+    void toast.offsetHeight;
+    toast.classList.add("toast-in");
+    toastHideTimer = setTimeout(() => {
+      if (activeToast === toast) activeToast = null;
+      dismissToast(toast);
+    }, 2800);
   }
 
   function createEditor(prefix) {

@@ -31,6 +31,9 @@ jobs:
           node scripts/test-pac-parse.js
           node scripts/test-routing-parity.js
           node scripts/test-background-contracts.js
+          node scripts/test-list-store.js
+          node scripts/test-settings-io.js
+          node scripts/test-i18n-keys.js
 
       - name: Package
         run: python3 scripts/package.py

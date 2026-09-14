@@ -111,6 +111,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     infoModal: document.getElementById("infoModal"),
     closeInfoBtn: document.getElementById("closeInfoBtn"),
     infoVersion: document.getElementById("infoVersion"),
+    importSettings: document.getElementById("importSettingsBtn"),
+    exportSettings: document.getElementById("exportSettingsBtn"),
+    importSettingsFile: document.getElementById("importSettingsFile"),
     conflictBanner: document.getElementById("conflictBanner"),
     conflictRefresh: document.getElementById("conflictRefreshBtn"),
     toastContainer: document.getElementById("toastContainer")
@@ -1312,7 +1315,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const card = document.createElement("div");
       card.className = `list-card${isEnabled ? "" : " list-disabled"}`;
       const name = String(l.name || "").trim();
-      const isLocal = !!(l.isLocal || (!l.url && (l.domains || []).length > 0));
+      const isLocal = !String(l.url || "").trim();
       const url = isLocal ? I18n.t("lbl_local_list") : String(l.url || "");
       card.dataset.search = [name, url].filter(Boolean).join(" ");
       const fmt = isLocal ? I18n.t("lbl_local_list") : (l.format === "pac" ? "PAC" : "txt");
@@ -1322,7 +1325,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         ? pluralRu(domains, "домен", "домена", "доменов")
         : (domains === 1 ? "domain" : "domains");
       const metaText = isLocal ? `${domains} ${domLabel}` : `${fmt} · ${domains} ${domLabel} / ${ips} IP`;
-      const updatedText = `${I18n.t("lbl_updated")}: ${formatListUpdated(l.updatedAt)}`;
+      const label = isLocal ? I18n.t("lbl_changed") : I18n.t("lbl_updated");
+      const updatedText = `${label}: ${formatListUpdated(l.updatedAt)}`;
       const updateError = ListUpdate.hasUpdateError(l) ? I18n.error(l.updateError, l.updateErrorCode) : "";
 
       const cardBody = document.createElement("div");
@@ -1542,7 +1546,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     els.listsForm.style.display = "flex";
     if (item) {
       editingListId = item.id;
-      const isLocalItem = !!(item.isLocal || (!item.url && (item.domains || []).length > 0));
+      const isLocalItem = !String(item.url || "").trim();
       const rawName = (item.name || "").trim();
       const isDefaultLocalName = isLocalItem && (
         rawName === "Локальный список" ||
@@ -2064,7 +2068,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         els.importListDomainsFile.value = "";
         els.importListDomainsFile.click();
       } else {
-        browser.tabs.create({ url: browser.runtime.getURL("import.html") });
+        openExtensionTab("import.html");
       }
     });
   }
@@ -2120,7 +2124,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const urlChanged = existing && canonListUrl(existing.url) !== canonListUrl(form.url);
         const proxyChanged = existing && !!existing.viaProxy !== form.viaProxy;
         const hasError = !!(existing && ListUpdate.hasUpdateError(existing));
-        const needFetch = !existing || urlChanged || proxyChanged || hasError || existing.isLocal;
+        const needFetch = !existing || urlChanged || proxyChanged || hasError || !existing.url;
         res = await sendListMessage(needFetch
           ? { action: "fetchList", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled }
           : { action: "saveListMeta", id: editingListId, url: form.url, name: form.name, intervalHours: form.intervalHours, viaProxy: form.viaProxy, enabled: form.enabled });
@@ -2175,11 +2179,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  els.openList.addEventListener("click", () => {
-    const url = browser.runtime.getURL("list.html");
-    browser.tabs.create({ url }).finally(() => {
+  function openExtensionTab(file) {
+    const url = browser.runtime.getURL(file);
+    return Promise.resolve(browser.tabs.create({ url })).catch(() => {}).finally(() => {
       try { window.close(); } catch (_) {}
     });
+  }
+
+  els.openList.addEventListener("click", () => {
+    openExtensionTab("list.html");
   });
   document.querySelectorAll(".info-link").forEach(a => {
     a.addEventListener("click", (e) => {
@@ -2255,6 +2263,64 @@ document.addEventListener("DOMContentLoaded", async () => {
     await browser.storage.local.set({ extensionEnabled, disabledByConflict: false });
     refreshPowerBtn();
     await checkProxyConflict();
+  });
+
+  async function exportSettings() {
+    const data = await browser.storage.local.get(SettingsIo.KEYS);
+    const payload = SettingsIo.exportBlob(data);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const stamp = [
+      now.getFullYear(),
+      pad(now.getMonth() + 1),
+      pad(now.getDate())
+    ].join("-") + "_" + [pad(now.getHours()), pad(now.getMinutes()), pad(now.getSeconds())].join("-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `deviateproxy_settings_${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    flash(I18n.t("msg_settings_exported"));
+  }
+
+  async function importSettingsText(text) {
+    const settings = SettingsIo.parse(text);
+    if (!settings) {
+      flash(I18n.t("error_settings_import"), "#ff6b6b");
+      return;
+    }
+    flash(I18n.t("import_settings_progress"));
+    const res = await browser.runtime.sendMessage({ action: "importSettings", settings });
+    if (!res || res.success === false) {
+      flash(I18n.error(res && res.error, res && res.code), "#ff6b6b");
+      return;
+    }
+    await loadState();
+    flash(I18n.t("msg_settings_imported"));
+  }
+
+  if (els.exportSettings) {
+    els.exportSettings.addEventListener("click", () => {
+      exportSettings().catch(e => flashError(e, null, "error_settings_import"));
+    });
+  }
+  if (els.importSettings) {
+    els.importSettings.addEventListener("click", () => {
+      const isAndroid = document.documentElement.classList.contains("android") || /Android/i.test(navigator.userAgent);
+      if (isAndroid && els.importSettingsFile) {
+        els.importSettingsFile.value = "";
+        els.importSettingsFile.click();
+      } else {
+        openExtensionTab("import-settings.html");
+      }
+    });
+  }
+  FileImport.attachFileInput(els.importSettingsFile, text => {
+    importSettingsText(text).catch(e => flashError(e, null, "error_settings_import"));
   });
 
   function openInfoModal() {

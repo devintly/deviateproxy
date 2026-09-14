@@ -65,11 +65,17 @@ const send = msg => {
   assert(res.success, "saveLocalList must succeed");
   assert(lists.all().length === 1, "local list must be stored");
   const local = lists.all()[0];
-  assert(local.name === "Мой" && local.isLocal === true, "local list meta must be normalized");
+  assert(local.name === "Мой" && !local.url && local.isLocal === undefined, "local list has no url");
   assert(local.domains.join(",") === "a.com,b.com", "comments must be dropped from a local list");
 
   assert(Array.isArray(stored.proxyLists) && stored.proxyLists.length === 1, "lists must be persisted");
   assert(calls.changed === 1, "onChanged must fire once per mutation");
+
+  res = await send({ action: "refreshList", id: local.id });
+  assert(res.success, "refresh of a local list is a no-op");
+  assert(calls.routes.length === 0, "local list must not be downloaded");
+  res = await send({ action: "refreshLists" });
+  assert(res.success && res.updated === 0 && res.failed === 0, "bulk refresh skips lists without url");
 
   // Локальный список сохраняет маски ровно в том виде, в котором их ввели.
   res = await send({ action: "saveLocalList", id: local.id, name: "Маски", domains: ["*.example.com", "plain.org"] });
@@ -78,10 +84,11 @@ const send = msg => {
   assert(stored.proxyLists[0].domains[0] === "*.example.com", "masks must reach storage");
 
   // Скачивание: маршрут запрашивается явно, offscreen/воркер закрывается после.
+  const afterBeforeFetch = calls.after;
   res = await send({ action: "fetchList", url: "https://lists.test/pac.txt", viaProxy: true, intervalHours: 6 });
   assert(res.success, "fetchList must succeed: " + res.error);
   assert(calls.routes.length === 1 && calls.routes[0].viaProxy === true, "fetch must honour viaProxy");
-  assert(calls.after === 1, "afterRun must close the parser context");
+  assert(calls.after === afterBeforeFetch + 1, "afterRun must close the parser context");
   const remote = lists.all()[1];
   assert(remote.domains.join(",") === "example.com,foo.org", "remote list must keep parsed domains");
   assert(remote.pacScript === undefined, "pacScript must never be stored");
@@ -121,6 +128,18 @@ const send = msg => {
   assert(res.success && res.updated === 1 && res.failed === 0, "refreshLists must report counters");
   assert(calls.updated === before + 1, "onUpdated must fire after a bulk refresh");
 
+  // importSettings ставит списки в storage и сразу качает URL-списки.
+  fetchBody = "imported.example\n";
+  res = await send({
+    action: "importSettings",
+    settings: {
+      proxyLists: [{ id: "imp", name: "Imported", url: "https://b.test/list.txt", enabled: true, domains: [] }]
+    }
+  });
+  assert(res.success && res.updated === 1, "importSettings must refresh remote lists");
+  assert(lists.all().length === 1 && lists.all()[0].id === "imp", "importSettings must replace lists");
+  assert(lists.all()[0].domains[0] === "imported.example", "imported URL list must be fetched");
+
   assert(lists.handleMessage({ action: "pingAllProxies" }) === null, "unrelated actions must not be claimed");
 
   // load(): чистит устаревший формат и сообщает о PAC-списках, требующих перекачки.
@@ -132,6 +151,7 @@ const send = msg => {
   assert(loaded.changed === true, "migration must be reported");
   assert(lists.all()[0].pacScript === undefined, "pacScript must be dropped on load");
   assert(lists.all()[1].updateError === "старая ошибка", "lastError must migrate to updateError");
+  assert(lists.all()[1].isLocal === undefined, "isLocal must be dropped on load");
 
   console.log("test-list-store: ok");
 })().catch(err => {

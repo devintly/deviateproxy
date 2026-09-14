@@ -47,7 +47,12 @@ const lists = ListStore.create({
     await applyProxySettings();
   },
   afterRun: closeOffscreenDocument,
-  onUpdated: () => tabs.refreshActiveBadge()
+  onUpdated: () => tabs.refreshActiveBadge(),
+  onImport: async settings => {
+    syncStateFromSettings(settings);
+    rebuildMaps();
+    try { await applyProxySettings(); } catch (_) {}
+  }
 });
 
 function rebuildMaps() {
@@ -55,6 +60,27 @@ function rebuildMaps() {
   if (next === maps) return;
   maps = next;
   tabs.recount();
+}
+
+// Импортированные настройки приводятся к текущему формату прямо в объекте:
+// ListStore сохранит именно его, поэтому память и storage не разъезжаются.
+function syncStateFromSettings(settings) {
+  if (!settings || typeof settings !== "object") return;
+  if (settings.proxyServers || settings.proxyConfig) {
+    proxyServers = ProxyConfig.migrateProxyServers(settings.proxyServers, settings.proxyConfig);
+    proxyConfig = ProxyConfig.configFromServers(proxyServers);
+    settings.proxyServers = proxyServers;
+    settings.proxyConfig = proxyConfig;
+  }
+  if (settings.proxyRules) proxyRules = settings.proxyRules;
+  if (settings.directRules) directRules = settings.directRules;
+  if (settings.extensionEnabled !== undefined) {
+    extensionEnabled = !!settings.extensionEnabled && !!proxyConfig.host;
+    settings.extensionEnabled = extensionEnabled;
+  } else if (extensionEnabled && !proxyConfig.host) {
+    extensionEnabled = false;
+    settings.extensionEnabled = false;
+  }
 }
 
 // Все записи в chrome.proxy.settings идут через эту очередь: окно временной
@@ -202,16 +228,18 @@ async function withFetchRoute(url, viaProxy, fn) {
     delete temporary.viaProxyHosts[host];
     temporary.dE[host] = 1;
   }
-  await setProxyPac(GeneratePac.generatePacScript(
-    ProxyConfig.pacProxyString(proxyConfig),
-    temporary,
-    ProxyConfig.buildProbeMap(proxyServers)
-  ));
-  try {
-    return await fn();
-  } finally {
-    await applyProxySettings();
-  }
+  return withProxyLock(async () => {
+    await setProxyPac(GeneratePac.generatePacScript(
+      ProxyConfig.pacProxyString(proxyConfig),
+      temporary,
+      ProxyConfig.buildProbeMap(proxyServers)
+    ));
+    try {
+      return await fn();
+    } finally {
+      await applyProxyState();
+    }
+  });
 }
 
 async function pingServer(server) {
@@ -438,11 +466,8 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
   if (changes.proxyRules) { proxyRules = Array.isArray(changes.proxyRules.newValue) ? changes.proxyRules.newValue : []; needRebuild = true; }
   if (changes.directRules) { directRules = Array.isArray(changes.directRules.newValue) ? changes.directRules.newValue : []; needRebuild = true; }
-  if (changes.proxyLists) {
-    lists.replace(changes.proxyLists.newValue);
-    needRebuild = true;
-    lists.scheduleAlarm();
-  }
+  // proxyLists пишет только ListStore, он же пересобирает карты и будильник,
+  // поэтому эхо собственной записи здесь игнорируется.
   if (changes.extensionEnabled) {
     extensionEnabled = !!changes.extensionEnabled.newValue && !!proxyConfig.host;
     needRebuild = true;

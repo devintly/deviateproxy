@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru" data-i18n-document-title="import_settings_title">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeviateProxy — Импорт настроек</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #1e1f22;
+      color: #f2f3f5;
+      font-family: Tahoma, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #2b2d31;
+      border-radius: 14px;
+      padding: 28px 24px;
+      max-width: 460px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    }
+    h2 { margin: 0 0 12px; font-size: 18px; color: #f2f3f5; }
+    p { margin: 0 0 20px; font-size: 13px; color: #949ba4; line-height: 1.5; }
+    .dropzone {
+      border: 2px dashed #404249;
+      border-radius: 12px;
+      padding: 28px 16px;
+      background: #232428;
+      transition: border-color 0.15s, background 0.15s;
+      cursor: default;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .dropzone.drag-over {
+      border-color: #017df1;
+      background: rgba(1, 125, 241, 0.08);
+    }
+    .drop-icon {
+      width: 44px;
+      height: 44px;
+      color: #949ba4;
+      transition: color 0.15s, transform 0.15s;
+    }
+    .dropzone.drag-over .drop-icon {
+      color: #017df1;
+      transform: translateY(-2px);
+    }
+    .drop-hint {
+      font-size: 13px;
+      font-weight: 600;
+      color: #dbdee1;
+    }
+    .btn-label {
+      appearance: none;
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      background: #017df1;
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .btn-label:hover { background: #016bcf; }
+    .btn-label svg { width: 16px; height: 16px; }
+    .status { margin-top: 18px; font-size: 13px; font-weight: 600; min-height: 20px; }
+    .status.progress { color: #dbdee1; }
+    .status.success { color: #57f287; }
+    .status.error { color: #ff6b6b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 data-i18n="import_settings_title">Импорт настроек</h2>
+    <p data-i18n="import_settings_desc">Выберите или перетащите файл .json с экспортом настроек DeviateProxy. Они заменят текущие серверы, правила и списки.</p>
+    <div id="dropzone" class="dropzone">
+      <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div class="drop-hint" data-i18n="import_settings_drag">Перетащите файл .json сюда или</div>
+      <label class="btn-label" for="fileInput">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span data-i18n="import_settings_select">Выбрать файл JSON</span>
+      </label>
+      <input id="fileInput" type="file" accept=".json,application/json" style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;">
+    </div>
+    <div id="status" class="status"></div>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="file-import.js"></script>
+  <script src="settings-io.js"></script>
+  <script src="import-settings.js"></script>
+</body>
+</html>

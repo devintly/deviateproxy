@@ -23,6 +23,7 @@
     var onChanged = options.onChanged || noop;
     var afterRun = options.afterRun || noop;
     var onUpdated = options.onUpdated || noop;
+    var onImport = options.onImport;
 
     var ListUpdate = resolveModule("ListUpdate");
     var ListIngest = resolveModule("ListIngest");
@@ -38,9 +39,12 @@
       return api.storage.local.set({ proxyLists: lists });
     }
 
+    // Расписание пересчитывается здесь, а не по событию storage: список правит
+    // только ListStore, и фон свои же записи не перечитывает.
     async function commitChange() {
       await persist();
       await onChanged();
+      await scheduleAlarm();
     }
 
     function find(id) {
@@ -134,7 +138,6 @@
       Object.assign(target, {
         name: String(msg.name || "").trim(),
         url: "",
-        isLocal: true,
         format: "txt",
         domains: domains,
         domainCount: domains.length,
@@ -158,7 +161,6 @@
       if (!target) throw fail("error_list_missing", "Список не найден");
       target.enabled = !!enabled;
       await commitChange();
-      await scheduleAlarm();
       if (target.enabled && target.url && ListUpdate.isDue(target, Date.now())) {
         try { await fetchTask(target.url, target.id, target); }
         catch (_) {}
@@ -170,13 +172,12 @@
       lists = lists.filter(function (item) { return item.id !== id; });
       if (lists.length === before) throw fail("error_list_missing", "Список не найден");
       await commitChange();
-      await scheduleAlarm();
     }
 
     async function refresh(id) {
       var target = find(id);
       if (!target) throw fail("error_list_missing", "Список не найден");
-      if (target.isLocal || !target.url) return;
+      if (!target.url) return;
       await fetchTask(target.url, target.id, target);
     }
 
@@ -208,6 +209,24 @@
     function updateAll() { return enqueue(function () { return updateListed(true); }); }
     function updateDue() { return enqueue(function () { return updateListed(false); }); }
 
+    // Настройки из файла приходят уже разобранными: списки по URL в них без
+    // содержимого, поэтому после применения они сразу скачиваются заново.
+    async function importSettings(settings) {
+      var next = Object.assign({}, settings && typeof settings === "object" ? settings : {});
+      if (Array.isArray(next.proxyLists)) {
+        load(next.proxyLists);
+        next.proxyLists = lists;
+      }
+      // onImport применяет настройки к состоянию фона и может нормализовать их
+      // (например, собрать список серверов из старого proxyConfig) до записи.
+      if (typeof onImport === "function") await onImport(next);
+      else await onChanged();
+      await api.storage.local.set(next);
+      var result = await updateListed(true);
+      await scheduleAlarm();
+      return result;
+    }
+
     async function scheduleAlarm() {
       try {
         var enabledLists = lists.filter(function (l) { return l.enabled !== false; });
@@ -228,7 +247,8 @@
       return !!list && (
         list.pacScript !== undefined ||
         list.pacIndex !== undefined ||
-        list.lastError !== undefined
+        list.lastError !== undefined ||
+        list.isLocal !== undefined
       );
     }
 
@@ -284,15 +304,18 @@
           return { success: true, updated: res.updated, failed: res.failed };
         }, errorResponse);
       }
+      if (action === "importSettings") {
+        return enqueue(function () { return importSettings(msg.settings); }).then(function (res) {
+          return { success: true, updated: res.updated, failed: res.failed };
+        }, errorResponse);
+      }
       return null;
     }
 
     return {
       ALARM_NAME: ALARM_NAME,
       all: function () { return lists; },
-      replace: function (next) { lists = Array.isArray(next) ? next : []; },
       load: load,
-      persist: persist,
       enqueue: enqueue,
       handleMessage: handleMessage,
       updateAll: updateAll,

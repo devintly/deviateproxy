@@ -193,6 +193,7 @@
     if (!list) return list;
     delete list.pacScript;
     delete list.pacIndex;
+    delete list.isLocal;
     if (!list.updateError && list.lastError) list.updateError = String(list.lastError);
     delete list.lastError;
     return list;

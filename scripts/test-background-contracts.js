@@ -39,6 +39,12 @@ assert(/initPromise\.then/.test(firefox), "Firefox listeners must await initiali
 assert(/function getProxyStatus\(/.test(chrome), "Chrome background must implement getProxyStatus");
 assert(/isProxyControlBlocked/.test(chrome) && /isProxyControlBlocked/.test(firefox), "Both backgrounds must use shared conflict detection");
 assert(!/foreignMode/.test(chrome), "Chrome must not treat its own PAC mode as a foreign conflict");
+assert(/importSettings/.test(listStore), "ListStore must apply imported settings and refresh URL lists");
+assert(/onImport:/.test(chrome) && /onImport:/.test(firefox), "Both backgrounds must apply imported proxy state before fetching lists");
+// Списки правит только ListStore: перечитывание собственной записи может
+// подменить свежескачанные домены снимком из storage.
+assert(!/changes\.proxyLists/.test(chrome) && !/changes\.proxyLists/.test(firefox), "Backgrounds must not re-adopt their own proxyLists writes");
+assert(/withProxyLock\(/.test(chrome) && /async function withFetchRoute[\s\S]*?withProxyLock\(/.test(chrome), "Chrome must hold the proxy lock while a list downloads");
 
 const chromeManifest = JSON.parse(read("src/chrome/manifest.json"));
 assert(chromeManifest.permissions.includes("offscreen"), "Chrome offscreen permission missing");

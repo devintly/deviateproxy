@@ -15,8 +15,6 @@
     .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 16px; padding-top: max(8px, env(safe-area-inset-top)); background: #2b2d31; flex-shrink: 0; }
     .title { font-size: 18px; font-weight: 700; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-    .status { font-size: 13px; font-weight: 600; color: #57f287; white-space: nowrap; }
-    .status:empty { display: none; }
     button { border: 0; border-radius: 10px; padding: 10px 14px; background: #017df1; color: #fff; font-weight: 700; cursor: pointer; min-height: 40px; transition: background 0.15s; }
     button:hover { background: #016bcf; }
     .pane-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -160,13 +158,44 @@
       .backdrop, textarea.code-editor { font-size: 15px; }
       .gutter { width: 42px; min-width: 42px; font-size: 12px; }
     }
+    .toast-container {
+      position: fixed;
+      top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      pointer-events: none;
+      width: min(420px, calc(100% - 24px));
+      display: flex;
+      justify-content: center;
+    }
+    .toast {
+      pointer-events: auto;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.4;
+      text-align: center;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      word-break: break-word;
+      max-width: 100%;
+      width: max-content;
+      box-sizing: border-box;
+    }
+    .toast.toast-in { opacity: 1; transform: translateY(0); }
+    .toast.toast-out { opacity: 0; transform: translateY(-8px); }
+    .toast.toast-success { background: #1b3024; color: #57f287; border: 1px solid rgba(87, 242, 135, 0.4); }
+    .toast.toast-error { background: #351c20; color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.4); }
   </style>
 </head>
 <body>
   <div class="top">
     <div class="title" data-i18n="btn_rule_editor">Редактор правил</div>
     <div class="right">
-      <div id="status" class="status" aria-live="polite"></div>
       <button id="saveBtn" type="button" data-i18n="btn_save">Сохранить</button>
     </div>
   </div>
@@ -206,6 +235,7 @@
       </div>
     </div>
   </div>
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
   <script src="i18n.js"></script>
   <script src="tlds.js"></script>
   <script src="host-rules.js"></script>

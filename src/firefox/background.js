@@ -44,7 +44,12 @@ const lists = ListStore.create({
   ingest: (url, text) => ListIngest.ingestRemoteAsync(url, text, browser.runtime.getURL("list-ingest-worker.js")),
   withFetchRoute: withFetchRoute,
   onChanged: async () => { rebuildMaps(); },
-  onUpdated: () => tabs.refreshActiveBadge()
+  onUpdated: () => tabs.refreshActiveBadge(),
+  onImport: async settings => {
+    syncStateFromSettings(settings);
+    rebuildMaps();
+    await syncToolbarIcon();
+  }
 });
 
 // Если правила и списки не изменились, HostRules возвращает те же карты —
@@ -59,6 +64,27 @@ function applyMaps(next) {
 
 function rebuildMaps() {
   if (applyMaps(HostRules.rebuildMaps(proxyRules, directRules, lists.all()))) tabs.recount();
+}
+
+// Импортированные настройки приводятся к текущему формату прямо в объекте:
+// ListStore сохранит именно его, поэтому память и storage не разъезжаются.
+function syncStateFromSettings(settings) {
+  if (!settings || typeof settings !== "object") return;
+  if (settings.proxyServers || settings.proxyConfig) {
+    proxyServers = ProxyConfig.migrateProxyServers(settings.proxyServers, settings.proxyConfig);
+    proxyConfig = ProxyConfig.configFromServers(proxyServers);
+    settings.proxyServers = proxyServers;
+    settings.proxyConfig = proxyConfig;
+  }
+  if (settings.proxyRules) proxyRules = settings.proxyRules;
+  if (settings.directRules) directRules = settings.directRules;
+  if (settings.extensionEnabled !== undefined) {
+    extensionEnabled = !!settings.extensionEnabled && !!proxyConfig.host;
+    settings.extensionEnabled = extensionEnabled;
+  } else if (extensionEnabled && !proxyConfig.host) {
+    extensionEnabled = false;
+    settings.extensionEnabled = false;
+  }
 }
 
 function decideProxySync(host, tabId) {
@@ -320,11 +346,8 @@ async function handleStorageChanges(changes) {
   }
   if (changes.proxyRules) { proxyRules = changes.proxyRules.newValue || []; need = true; }
   if (changes.directRules) { directRules = changes.directRules.newValue || []; need = true; }
-  if (changes.proxyLists) {
-    lists.replace(changes.proxyLists.newValue);
-    need = true;
-    lists.scheduleAlarm();
-  }
+  // proxyLists пишет только ListStore, он же пересобирает карты и будильник,
+  // поэтому эхо собственной записи здесь игнорируется.
   if (changes.extensionEnabled) {
     extensionEnabled = !!changes.extensionEnabled.newValue && !!proxyConfig.host;
     need = true;
