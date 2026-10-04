@@ -1,6 +1,6 @@
 # Privacy Policy for DeviateProxy
 
-*Last updated: September 18, 2024*
+*Last updated: September 18, 2026*
 
 **DeviateProxy** is an open-source browser extension designed to route web traffic through user-configured proxy servers based on domain and host rules, with support for PAC and TXT list import.
 
@@ -45,7 +45,7 @@ If you have any questions or concerns regarding this Privacy Policy, you can ope
 
 # Политика конфиденциальности DeviateProxy
 
-*Дата обновления: 18 сентября 2024 г.*
+*Дата обновления: 18 сентября 2026*
 
 **DeviateProxy** — это расширение для браузера с открытым исходным кодом, предназначенное для выборочной маршрутизации сетевого трафика через указанные пользователем прокси-серверы на основе правил для доменов и импорта PAC/TXT-списков.
 
